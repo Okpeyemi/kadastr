@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang='fr'>
+	<head>
+		<meta charset='utf-8'>
+		<meta name='viewport' content='width=device-width, initial-scale=1'>
+		<title>Mapbox - Carte tout-en-un</title>
+		<link
+			rel='stylesheet'
+			href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css'
+		/>
+		<link rel='icon' href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="%231f2937"/></svg>'/>
+		<style>
+            html, body { height: 100%; margin: 0 }
+            #map { position: absolute; inset: 0 }
+            .controls {
+				position: absolute;
+				top: 12px;
+				left: 12px;
+				z-index: 1;
+				box-shadow: 0 2px 8px rgba(0,0,0,.1);
+				padding: 12px;
+				min-width: 260px;
+				font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+					Cantarell, Noto Sans, Helvetica Neue, Arial
+			}
+
+			.controls form { display: flex; gap: 8px; margin-bottom: 10px }
+			.controls input[type='text'] {
+				flex: 1;
+				padding: 8px 10px;
+				border: 1px solid #e5e7eb;
+				border-radius: 6px;
+				outline: none;
+			}
+			.controls button, .controls label { font-size: 14px }
+			.controls button {
+				padding: 8px 10px;
+				background: #1f2937;
+				color: #fff;
+				border: none;
+				border-radius: 6px;
+				cursor: pointer
+			}
+			.controls button:hover { background: #111827 }
+			.controls .toggles { display: grid; gap: 6px }
+			.controls .status { font-size: 12px; color: #4b5563 }
+			.controls .legend { margin-top: 10px; display: grid; gap: 6px }
+			.controls .legend .item { display: flex; align-items: center; gap: 8px }
+			.controls .legend .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #e5e7eb }
+			.controls .legend .item.hidden { opacity: 0.45; text-decoration: line-through }
+			.controls .selection { margin-top: 10px; display: flex; gap: 8px; align-items: center }
+			.controls .selection small { color: #4b5563 }
+			.controls .catalog { margin-top: 10px; display: grid; gap: 6px }
+			.controls .info-panel { margin-top: 10px; padding: 8px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 13px }
+			.controls .rules { margin-top: 10px; display: grid; gap: 6px }
+			.controls .rules label { display: flex; align-items: center; gap: 8px }
+			.mapboxgl-popup-content {
+				font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+				Cantarell, Noto Sans, Helvetica Neue, Arial
+			}
+
+      /* Masquer tout sauf "Couches supplémentaires" (+ catalog) */
+      .controls h3,
+      .controls .row,
+      .controls form#searchForm,
+      .controls #searchStatus,
+      .controls #toggles,
+      .controls #legend,
+      .controls .info-panel,
+      .controls .selection,
+      .controls .rules {
+        display: none !important;
+      }
+		</style>
+	</head>
+	<body>
+		<div id='map'></div>
+		<div class='controls' style="background: #f9fafb; border-radius: 12px;">
+			<h3>Recherche & Couches</h3>
+			<div class='row' style='display:flex; gap:8px; margin-bottom:8px'>
+				<label for='datasetSelect' style='min-width:100px'>Jeu de données</label>
+				<select id='datasetSelect' style='flex:1; padding:6px 8px; border:1px solid #e5e7eb; border-radius:6px'></select>
+			</div>
+			<div class='row' style='display:flex; gap:8px; margin-bottom:8px'>
+				<input id='datasetManual' type='text' placeholder='Nom de fichier (geojson/...) ou URL' style='flex:1; padding:6px 8px; border:1px solid #e5e7eb; border-radius:6px' />
+				<button id='datasetLoadBtn' type='button'>Charger</button>
+				<button id='datasetReloadBtn' type='button'>Recharger</button>
+			</div>
+			<div class='row' style='display:flex; gap:8px; margin-bottom:8px'>
+				<label for='leveSelect' style='min-width:100px'>Levée</label>
+				<select id='leveSelect' style='flex:1; padding:6px 8px; border:1px solid #e5e7eb; border-radius:6px'></select>
+				<button id='leveShowBtn' type='button'>Afficher</button>
+			</div>
+			<form id='searchForm'>
+				<input id='searchInput' type='text' placeholder='ID ex: 12' />
+				<button type='submit'>Rechercher</button>
+			</form>
+			<div id='searchStatus' class='status'></div>
+			<div class='toggles' id='toggles'></div>
+			<div id='legend' class='legend'></div>
+			<div style='margin-top:10px; font-weight:600;'>Couches supplémentaires</div>
+			<div class='catalog' id='catalogToggles'></div>
+			
+			<div class='info-panel' id='infoPanel'>Sélectionnez une parcelle pour analyser les intersections.</div>
+			<div class='selection'>
+				<button id='exportBtn' disabled>Exporter la sélection</button>
+				<small id='selectionStatus'>Aucune sélection</small>
+			</div>
+		</div>
+
+		<script src='config.js'></script>
+		<script src='https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js'></script>
+		<script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+		<script src='https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js'></script>
+		<script src='https://cdn.jsdelivr.net/npm/rbush@3.0.1/rbush.min.js'></script>
+		<script>
+			// Token via config.js (env/proxy) sinon fallback (démo)
+			const USE_PROXY = Boolean(window.MAPBOX_USE_PROXY)
+			mapboxgl.accessToken = USE_PROXY
+				? 'proxy'
+				: (window.MAPBOX_TOKEN || 'YOUR_MAPBOX_ACCESS_TOKEN')
+
+			const mapOptions = {
+				container: 'map',
+				style: 'mapbox://styles/mapbox/streets-v11',
+				center: [2.6, 6.4],
+				zoom: 12,
+			}
+
+			if (USE_PROXY) {
+				mapOptions.transformRequest = (url, resourceType) => {
+					const isMapbox = url.includes('api.mapbox.com') || url.includes('tiles.mapbox.com')
+					if (isMapbox) {
+						return { url: `/proxy?url=${encodeURIComponent(url)}` }
+					}
+					return { url }
+				}
+			}
+
+			const map = new mapboxgl.Map(mapOptions)
+
+			map.addControl(new mapboxgl.NavigationControl(), 'top-right')
+
+			let parcellesData = null
+			let hoveredId = null
+			let selectedId = null
+			let selectedFeature = null
+			let leves = []
+			let selectedLeveFeature = null
+			let legendItems = []
+			let currentFillLayerIds = []
+			let currentBorderLayerId = ''
+			const boundLayerIds = new Set()
+			let currentDatasetSource = ''
+			let activeSearchIdKeys = ['id','ID','code']
+			let activeSearchTextKeys = ['nom','name','libelle','label','designation','type','status']
+
+			const levelsColors = {
+				low: '#22c55e',
+				mid: '#f59e0b',
+				high: '#ef4444',
+			}
+
+			function layerIdForClass (cls) {
+				if (cls === 'low') return 'aif-low'
+				if (cls === 'mid') return 'aif-mid'
+				if (cls === 'high') return 'aif-high'
+				return null
+			}
+
+			const statusColors = {
+				'Public': '#22c55e',
+				'Privé': '#ef4444',
+				'Zone sensible': '#f97316',
+			}
+
+			// Configuration des couches supplémentaires (catalogue)
+			const CATALOG_CONFIG = [
+				{ file: 'restriction.geojson', name: 'Restrictions', sourceId: 'src-restrictions', color: '#FFA500', category: 'restriction' },
+				{ file: 'air_proteges.geojson', name: 'Aires protégées', sourceId: 'src-aires', color: '#228B22', category: 'aire' },
+				{ file: 'dpl.geojson', name: 'DPL', sourceId: 'src-dpl', color: '#87CEEB', category: 'dpl' },
+				{ file: 'dpm.geojson', name: 'DPM', sourceId: 'src-dpm', color: '#87CEEB', category: 'dpm' },
+				{ file: 'litige.geojson', name: 'Zones litigieuses', sourceId: 'src-litiges', color: '#FF0000', category: 'litige' },
+				{ file: 'tf_etat.geojson', name: "TF de l'État", sourceId: 'src-tf-etat', color: '#003366', category: 'tf_etat' },
+				{ file: 'tf_en_cours.geojson', name: 'TF en cours', sourceId: 'src-tf-encours', color: '#800080', category: 'tf_en_cours' },
+				{ file: 'tf_demembres.geojson', name: 'TF démembrés', sourceId: 'src-tf-demembre', color: '#A9A9A9', category: 'tf_demembres' },
+				{ file: 'titre_reconstitue.geojson', name: 'TF reconstitués', sourceId: 'src-tf-reconst', color: '#555555', category: 'tf_reconstitue' },
+				{ file: 'enregistrement individuel.geojson', name: 'Parcelles individuelles', sourceId: 'src-enreg-individuel', color: '#8B4513', category: 'enreg_ind' },
+				{ file: 'aif.geojson', name: 'AIF', sourceId: 'src-aif', color: '#00CED1', category: 'aif' },
+				{ file: 'zone_inondable.geojson', name: 'Zone inondable', sourceId: 'src-zone-inondable', color: '#00BFFF', category: 'zone_inondable' },
+			]
+
+			let catalogData = {}
+			let catalogIndex = {}
+			let intersectedFeatures = []
+
+			// >>> Ajout: helper pour communiquer avec le parent (iframe -> page)
+			function postToParent (type, payload = {}) {
+				try {
+					const msg = { type, ...payload }
+					// même origine => '*'' OK en dev; remplace par location.origin si besoin
+					window.parent && window.parent.postMessage(msg, '*')
+				} catch (e) {}
+			}
+
+			function reprojectFeatureCollection (fc, from, to) {
+				const out = { type: 'FeatureCollection', features: [] }
+				out.features = fc.features.map(f => ({
+					type: 'Feature',
+					properties: f.properties || {},
+					geometry: reprojectGeometry(f.geometry, from, to),
+				}))
+				return out
+			}
+
+			function reprojectGeometry (geom, from, to) {
+				if (!geom) return null
+				if (geom.type === 'Point') {
+					const c = geom.coordinates
+					return { type: 'Point', coordinates: toLonLat(c, from, to) }
+				}
+				if (geom.type === 'MultiPoint') {
+					return {
+						type: 'MultiPoint',
+						coordinates: geom.coordinates.map(c => toLonLat(c, from, to)),
+					}
+				}
+				if (geom.type === 'LineString') {
+					return {
+						type: 'LineString',
+						coordinates: geom.coordinates.map(c => toLonLat(c, from, to)),
+					}
+				}
+				if (geom.type === 'MultiLineString') {
+					return {
+						type: 'MultiLineString',
+						coordinates: geom.coordinates.map(line => line.map(c => toLonLat(c, from, to))),
+					}
+				}
+				if (geom.type === 'Polygon') {
+					return {
+						type: 'Polygon',
+						coordinates: geom.coordinates.map(ring => ring.map(c => toLonLat(c, from, to))),
+					}
+				}
+				if (geom.type === 'MultiPolygon') {
+					return {
+						type: 'MultiPolygon',
+						coordinates: geom.coordinates.map(poly => poly.map(ring => ring.map(c => toLonLat(c, from, to)))),
+					}
+				}
+				return geom
+			}
+
+			function toLonLat (coord, from, to) {
+				const x = coord[0]
+				const y = coord[1]
+				const p = proj4(from, to, [x, y])
+				return [p[0], p[1]]
+			}
+
+			// Règles avancées: distances de proximité par catégorie (modifiable)
+			const RULES = {
+				'aire': { proximityMeters: 100 },
+				'dpl': { proximityMeters: 30 },
+				'dpm': { proximityMeters: 30 },
+				'restriction': { proximityMeters: 0 },
+				'litige': { proximityMeters: 0 },
+				'tf_etat': { proximityMeters: 0 },
+				'tf_en_cours': { proximityMeters: 0 },
+				'tf_demembres': { proximityMeters: 0 },
+				'tf_reconstitue': { proximityMeters: 0 },
+				'enreg_ind': { proximityMeters: 0 },
+				'aif': { proximityMeters: 0 },
+			}
+
+			function rulesStorageKey () { return 'map:rules' }
+			function loadRulesFromStorage () {
+				try { return JSON.parse(localStorage.getItem(rulesStorageKey()) || '{}') } catch (e) { return {} }
+			}
+			function saveRulesToStorage (m) {
+				try { localStorage.setItem(rulesStorageKey(), JSON.stringify(m)) } catch (e) {}
+			}
+			function applyStoredRules () {
+				const saved = loadRulesFromStorage()
+				// Migration: renommage de catégorie tf_demembre -> tf_demembres
+				if (saved && saved['tf_demembre'] && !saved['tf_demembres']) {
+					saved['tf_demembres'] = saved['tf_demembre']
+					saveRulesToStorage(saved)
+				}
+				Object.keys(saved).forEach(cat => {
+					if (RULES[cat] && typeof saved[cat].proximityMeters === 'number') {
+						RULES[cat].proximityMeters = Math.max(0, Math.round(saved[cat].proximityMeters))
+					}
+				})
+			}
+			function getCategoryLabel (cat) {
+				const cfg = CATALOG_CONFIG.find(c => c.category === cat)
+				return cfg ? cfg.name : cat
+			}
+			function renderRulesUI () {
+				const root = document.getElementById('rulesPanel')
+				if (!root) return
+				root.innerHTML = ''
+				const saved = loadRulesFromStorage()
+				Object.keys(RULES).forEach(cat => {
+					const lab = document.createElement('label')
+					const span = document.createElement('span')
+					span.textContent = getCategoryLabel(cat)
+					const input = document.createElement('input')
+					input.type = 'number'
+					input.min = '0'
+					input.step = '1'
+					input.style.width = '96px'
+					const current = (saved[cat] && typeof saved[cat].proximityMeters === 'number') ? saved[cat].proximityMeters : RULES[cat].proximityMeters
+					input.value = String(current)
+					input.setAttribute('data-cat', cat)
+					input.addEventListener('change', e => {
+						const v = Math.max(0, Math.round(parseFloat(e.target.value))) || 0
+						e.target.value = String(v)
+						const k = e.target.getAttribute('data-cat')
+						RULES[k].proximityMeters = v
+						const obj = loadRulesFromStorage()
+						obj[k] = { proximityMeters: v }
+						saveRulesToStorage(obj)
+						if (selectedFeature) analyzeIntersections(selectedFeature)
+					})
+					lab.appendChild(span)
+					lab.appendChild(input)
+					root.appendChild(lab)
+				})
+			}
+
+			function catalogVisibilityStorageKey () { return 'map:catalogVisibility' }
+			function loadCatalogVisibilityMap () {
+				try { return JSON.parse(localStorage.getItem(catalogVisibilityStorageKey()) || '{}') } catch (e) { return {} }
+			}
+			function saveCatalogVisibilityMap (m) {
+				try { localStorage.setItem(catalogVisibilityStorageKey(), JSON.stringify(m)) } catch (e) {}
+			}
+
+			async function loadCatalogLayers () {
+				const visMap = loadCatalogVisibilityMap()
+				const beforeId = null // on ajoute par défaut au-dessus
+				for (const cfg of CATALOG_CONFIG) {
+					try {
+						const url = `geojson/${encodeURIComponent(cfg.file)}`
+						const res = await fetch(url, { cache: 'no-store' })
+						if (!res.ok) continue
+						let data = await res.json()
+						if (data && data.crs && String(data.crs.properties && data.crs.properties.name || '').includes('32631')) {
+							proj4.defs('EPSG:32631', '+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs +type=crs')
+							data = reprojectFeatureCollection(data, 'EPSG:32631', 'EPSG:4326')
+						}
+						// Assigner un id déterministe pour chaque entité (index)
+						if (data && Array.isArray(data.features)) {
+							data.features = data.features.map((f, i) => {
+								if (typeof f.id === 'undefined') {
+									f = { ...f, id: i }
+								}
+								return f
+							})
+						}
+						catalogData[cfg.sourceId] = data
+						catalogIndex[cfg.sourceId] = { bboxes: (data.features || []).map(f => turf.bbox(f)) }
+						if (window.RBush) {
+							const items = (data.features || []).map((f, i) => {
+								const b = catalogIndex[cfg.sourceId].bboxes[i]
+								return { minX: b[0], minY: b[1], maxX: b[2], maxY: b[3], idx: i }
+							})
+							const tree = new RBush()
+							tree.load(items)
+							catalogIndex[cfg.sourceId].tree = tree
+						}
+						if (!map.getSource(cfg.sourceId)) {
+							map.addSource(cfg.sourceId, { type: 'geojson', data })
+						}
+						const fillId = `${cfg.sourceId}-fill`
+						const lineId = `${cfg.sourceId}-border`
+						if (!map.getLayer(fillId)) {
+							map.addLayer({ id: fillId, type: 'fill', source: cfg.sourceId, paint: { 'fill-color': cfg.color, 'fill-opacity': ['case', ['boolean', ['feature-state', 'intersect'], false], 0.65, 0.25] } })
+						}
+						if (!map.getLayer(lineId)) {
+							map.addLayer({ id: lineId, type: 'line', source: cfg.sourceId, paint: { 'line-color': ['case', ['boolean', ['feature-state', 'intersect'], false], '#FFD700', cfg.color], 'line-width': ['case', ['boolean', ['feature-state', 'intersect'], false], 3.0, 2.0] } })
+						}
+						const persisted = visMap[cfg.sourceId]
+						if (typeof persisted === 'boolean') {
+							const vis = persisted ? 'visible' : 'none'
+							if (map.getLayer(fillId)) map.setLayoutProperty(fillId, 'visibility', vis)
+							if (map.getLayer(lineId)) map.setLayoutProperty(lineId, 'visibility', vis)
+						}
+					} catch (e) { /* ignore missing */ }
+				}
+				renderCatalogToggles()
+			}
+
+			function renderCatalogToggles () {
+				const root = document.getElementById('catalogToggles')
+				if (!root) return
+				const visMap = loadCatalogVisibilityMap()
+				root.innerHTML = ''
+				CATALOG_CONFIG.forEach(cfg => {
+					const lab = document.createElement('label')
+					lab.style.display = 'flex'
+					lab.style.alignItems = 'center'
+					lab.style.gap = '6px'
+					const sw = document.createElement('span')
+					sw.style.width = '12px'
+					sw.style.height = '12px'
+					sw.style.border = '1px solid #e5e7eb'
+					sw.style.borderRadius = '3px'
+					sw.style.background = cfg.color
+					sw.title = cfg.name
+					const cb = document.createElement('input')
+					cb.type = 'checkbox'
+					cb.setAttribute('data-src', cfg.sourceId)
+					const initialChecked = visMap[cfg.sourceId] !== false
+					cb.checked = initialChecked
+					const fillId = `${cfg.sourceId}-fill`
+					const lineId = `${cfg.sourceId}-border`
+					const vis = cb.checked ? 'visible' : 'none'
+					if (map.getLayer(fillId)) map.setLayoutProperty(fillId, 'visibility', vis)
+					if (map.getLayer(lineId)) map.setLayoutProperty(lineId, 'visibility', vis)
+					cb.addEventListener('change', e => {
+						const src = e.target.getAttribute('data-src')
+						const fid = `${src}-fill`
+						const lid = `${src}-border`
+						const v = e.target.checked ? 'visible' : 'none'
+						if (map.getLayer(fid)) map.setLayoutProperty(fid, 'visibility', v)
+						if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', v)
+						const m = loadCatalogVisibilityMap()
+						m[src] = e.target.checked
+						saveCatalogVisibilityMap(m)
+					})
+					lab.appendChild(cb)
+					lab.appendChild(sw)
+					lab.appendChild(document.createTextNode(` ${cfg.name}`))
+					root.appendChild(lab)
+				})
+			}
+
+			function clearIntersectStates () {
+				intersectedFeatures.forEach(it => {
+					try { map.setFeatureState({ source: it.sourceId, id: it.id }, { intersect: false }) } catch (e) {}
+				})
+				intersectedFeatures = []
+			}
+
+			function analyzeIntersections (feature, allowedCategories) {
+				clearIntersectStates()
+				if (!feature || !feature.geometry) { updateInfoPanel(feature, []) ; return }
+				const parcel = feature
+				const pbox = turf.bbox(parcel)
+				const results = []
+				const bufferedParcelCache = {}
+				const hasFilter = Array.isArray(allowedCategories)
+				const allowedSet = hasFilter ? new Set(allowedCategories) : null
+				CATALOG_CONFIG.forEach(cfg => {
+					if (hasFilter && !allowedSet.has(cfg.category)) return
+					const fc = catalogData[cfg.sourceId]
+					if (!fc || !fc.features) return
+					const idx = catalogIndex[cfg.sourceId] || {}
+					const bboxes = idx.bboxes || []
+					const tree = idx.tree
+					let candidateIdxs = []
+					if (tree) {
+						const cands = tree.search({ minX: pbox[0], minY: pbox[1], maxX: pbox[2], maxY: pbox[3] })
+						candidateIdxs = cands.map(it => it.idx)
+						const rule = RULES[cfg.category]
+						if (rule && rule.proximityMeters > 0) {
+							const km = rule.proximityMeters / 1000
+							if (!bufferedParcelCache[cfg.category]) {
+								bufferedParcelCache[cfg.category] = turf.buffer(parcel, km, { units: 'kilometers' })
+							}
+							const pbuf = bufferedParcelCache[cfg.category]
+							const pb = turf.bbox(pbuf)
+							const near = tree.search({ minX: pb[0], minY: pb[1], maxX: pb[2], maxY: pb[3] }).map(it => it.idx)
+							candidateIdxs = Array.from(new Set(candidateIdxs.concat(near)))
+						}
+					} else {
+						for (let i = 0; i < fc.features.length; i++) {
+							const bb = bboxes[i] || turf.bbox(fc.features[i])
+							if (pbox[0] <= bb[2] && pbox[2] >= bb[0] && pbox[1] <= bb[3] && pbox[3] >= bb[1]) candidateIdxs.push(i)
+						}
+						const rule = RULES[cfg.category]
+						if (rule && rule.proximityMeters > 0) {
+							const km = rule.proximityMeters / 1000
+							if (!bufferedParcelCache[cfg.category]) {
+								bufferedParcelCache[cfg.category] = turf.buffer(parcel, km, { units: 'kilometers' })
+							}
+							const pbuf = bufferedParcelCache[cfg.category]
+							const pb = turf.bbox(pbuf)
+							for (let i = 0; i < fc.features.length; i++) {
+								const bb = bboxes[i] || turf.bbox(fc.features[i])
+								if (pb[0] <= bb[2] && pb[2] >= bb[0] && pb[1] <= bb[3] && pb[3] >= bb[1]) candidateIdxs.push(i)
+							}
+							candidateIdxs = Array.from(new Set(candidateIdxs))
+						}
+					}
+					const hits = []
+					for (const i of candidateIdxs) {
+						const f = fc.features[i]
+						try {
+							if (turf.booleanIntersects(parcel, f)) {
+								hits.push({ f, idx: i, reason: 'intersect' })
+							} else {
+								const rule = RULES[cfg.category]
+								if (rule && rule.proximityMeters > 0) {
+									const km = rule.proximityMeters / 1000
+									if (!bufferedParcelCache[cfg.category]) {
+										bufferedParcelCache[cfg.category] = turf.buffer(parcel, km, { units: 'kilometers' })
+									}
+									const pbuf = bufferedParcelCache[cfg.category]
+									if (turf.booleanIntersects(pbuf, f)) {
+										hits.push({ f, idx: i, reason: 'buffer' })
+									}
+								}
+							}
+						} catch (e) {}
+					}
+					if (hits.length) {
+						const proximity = hits.some(h => h.reason === 'buffer')
+						results.push({ cfg, hits, proximity })
+						hits.forEach(h => {
+							const fid = typeof h.f.id !== 'undefined' ? h.f.id : h.idx
+							try {
+								map.setFeatureState({ source: cfg.sourceId, id: fid }, { intersect: true })
+								intersectedFeatures.push({ sourceId: cfg.sourceId, id: fid })
+							} catch (e) {}
+						})
+					}
+				})
+				updateInfoPanel(parcel, results)
+			}
+
+			function ensureEPSG32631 () {
+				try { proj4.defs('EPSG:32631') } catch (e) {}
+				proj4.defs('EPSG:32631', '+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs +type=crs')
+			}
+
+			function splitCsvLine (line) {
+				const out = []
+				let cur = ''
+				let inQuotes = false
+				for (let i = 0; i < line.length; i++) {
+					const ch = line[i]
+					if (ch === '"') {
+						if (inQuotes && line[i + 1] === '"') { cur += '"'; i++ }
+						else { inQuotes = !inQuotes }
+					} else if (ch === ';' && !inQuotes) { out.push(cur); cur = '' }
+					else { cur += ch }
+				}
+				out.push(cur)
+				return out
+			}
+
+			function mapCsvFieldToCategory (k) {
+				switch (String(k || '').trim()) {
+					case 'aif': return 'aif'
+					case 'air_proteges': return 'aire'
+					case 'dpl': return 'dpl'
+					case 'dpm': return 'dpm'
+					case 'enregistrement individuel': return 'enreg_ind'
+					case 'litige': return 'litige'
+					case 'restriction': return 'restriction'
+					case 'tf_demembres': return 'tf_demembres'
+					case 'tf_en_cours': return 'tf_en_cours'
+					case 'tf_etat': return 'tf_etat'
+					case 'titre_reconstitue': return 'tf_reconstitue'
+					case 'zone_inondable': return 'zone_inondable'
+					case 'parcelles': return null
+					default: return null
+				}
+			}
+
+			function parseSubmissionCsv (text) {
+				const lines = (text || '').split(/\r?\n/).filter(l => l.trim().length)
+				if (!lines.length) return []
+				const header = splitCsvLine(lines[0]).map(s => s.trim())
+				const nameIdx = header.indexOf('Nom_du_levé')
+				const coordsIdx = header.indexOf('Coordonnées')
+				const dataCols = header
+					.map((h, i) => ({ h, i }))
+					.filter(o => o.i !== nameIdx && o.i !== coordsIdx)
+				const out = []
+				for (let li = 1; li < lines.length; li++) {
+					const parts = splitCsvLine(lines[li])
+					if (!parts.length) continue
+					const name = (parts[nameIdx] || '').trim()
+					let coordStr = (parts[coordsIdx] || '').trim()
+					if (!name || !coordStr) continue
+					if (coordStr[0] === '"' && coordStr[coordStr.length - 1] === '"') coordStr = coordStr.slice(1, -1)
+					coordStr = coordStr.replace(/""/g, '"')
+					let coordsArr = []
+					try { coordsArr = JSON.parse(coordStr) } catch (e) { continue }
+					const flags = {}
+					dataCols.forEach(o => {
+						const v = (parts[o.i] || '').trim()
+						flags[o.h] = /^oui$/i.test(v)
+					})
+					out.push({ name, coordsArr, flags })
+				}
+				return out
+			}
+
+			function buildLeveFeature (row) {
+				ensureEPSG32631()
+				const lonlats = (row.coordsArr || []).map(pt => {
+					const x = Number(pt.x), y = Number(pt.y)
+					return toLonLat([x, y], 'EPSG:32631', 'EPSG:4326')
+				}).filter(c => Array.isArray(c) && c.length === 2)
+				let geom = null
+				if (lonlats.length >= 3) {
+					const ring = lonlats.slice()
+					const a = ring[0], b = ring[ring.length - 1]
+					if (a[0] !== b[0] || a[1] !== b[1]) ring.push(a)
+					geom = { type: 'Polygon', coordinates: [ring] }
+				} else {
+					geom = { type: 'LineString', coordinates: lonlats }
+				}
+				return { type: 'Feature', properties: { name: row.name }, geometry: geom }
+			}
+
+			function addOrUpdateLeveLayers (feat) {
+				const srcId = 'leve'
+				const fc = { type: 'FeatureCollection', features: [feat] }
+				if (!map.getSource(srcId)) map.addSource(srcId, { type: 'geojson', data: fc })
+				else map.getSource(srcId).setData(fc)
+				if (!map.getLayer('leve-fill')) {
+					map.addLayer({ id: 'leve-fill', type: 'fill', source: srcId, paint: { 'fill-color': '#ff69b4', 'fill-opacity': 0.35 } })
+				}
+				if (!map.getLayer('leve-border')) {
+					map.addLayer({ id: 'leve-border', type: 'line', source: srcId, paint: { 'line-color': '#ff1493', 'line-width': 2.5 } })
+				}
+			}
+
+			function setCatalogVisibilityForCategories (cats) {
+				const setVisible = new Set(cats || [])
+				CATALOG_CONFIG.forEach(cfg => {
+					const vis = setVisible.has(cfg.category) ? 'visible' : 'none'
+					const fillId = `${cfg.sourceId}-fill`
+					const lineId = `${cfg.sourceId}-border`
+					if (map.getLayer(fillId)) map.setLayoutProperty(fillId, 'visibility', vis)
+					if (map.getLayer(lineId)) map.setLayoutProperty(lineId, 'visibility', vis)
+					const root = document.getElementById('catalogToggles')
+					if (root) {
+						const inputs = root.querySelectorAll('input[type="checkbox"][data-src]')
+						inputs.forEach(cb => {
+							const src = cb.getAttribute('data-src')
+							if (src === cfg.sourceId) cb.checked = (vis === 'visible')
+						})
+					}
+				})
+			}
+
+			function fitViewToFeature (feat) {
+				try {
+					const b = turf.bbox(feat)
+					map.fitBounds([[b[0], b[1]],[b[2], b[3]]], { padding: 40, duration: 400 })
+				} catch (e) {}
+			}
+
+			async function initLevesUI () {
+  try {
+    const res = await fetch('submission.csv', { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
+    const text = await res.text()
+    leves = parseSubmissionCsv(text)
+    const sel = document.getElementById('leveSelect')
+    if (sel) {
+      sel.innerHTML = ''
+      leves.forEach(row => {
+        const opt = document.createElement('option')
+        opt.value = row.name
+        opt.textContent = row.name
+        sel.appendChild(opt)
+      })
+    }
+    const btn = document.getElementById('leveShowBtn')
+    if (btn) btn.addEventListener('click', showSelectedLeve)
+
+    // >>> Auto-sélection au chargement
+    const params = new URLSearchParams(location.search)
+    const pref = params.get('leve') || localStorage.getItem('map:lastLeve') || 'leve84.png'
+    const byExact = leves.find(r => r.name === pref)
+    // tolère les extensions différentes (ex: leve84.jpg)
+    const base = pref.replace(/\.[^.]+$/, '')
+    const byBase = leves.find(r => r.name.replace(/\.[^.]+$/, '') === base)
+    const chosen = byExact || byBase || leves[0]
+    if (sel && chosen) {
+      sel.value = chosen.name
+      showSelectedLeve()
+    }
+  } catch (e) { /* ignore */ }
+}
+
+			function showSelectedLeve () {
+  const sel = document.getElementById('leveSelect')
+  if (!sel || !sel.value) return
+  const row = leves.find(r => r.name === sel.value)
+  if (!row) return
+  selectedLeveFeature = buildLeveFeature(row)
+  addOrUpdateLeveLayers(selectedLeveFeature)
+  const allowed = Object.entries(row.flags || {})
+    .filter(([k, v]) => v === true)
+    .map(([k]) => mapCsvFieldToCategory(k))
+    .filter(Boolean)
+  setCatalogVisibilityForCategories(allowed)
+
+  // >>> mémorise la dernière levée choisie
+  try { localStorage.setItem('map:lastLeve', row.name) } catch (e) {}
+
+  // >>> informer le parent (panneau résultat)
+  postToParent('kadastr:leve:selected', {
+    name: row.name,
+    imageUrl: `/${row.name}`,
+    allowed
+  })
+
+  analyzeIntersections(selectedLeveFeature, allowed)
+  fitViewToFeature(selectedLeveFeature)
+}
+
+			function extractMainAttributes (p) {
+				const keysPref = ['numero','num_tf','numero_tf','tf','designation','type','categorie','classe','zone','code','nom','name']
+				const out = {}
+				keysPref.forEach(k => { if (p && typeof p[k] !== 'undefined') out[k] = p[k] })
+				return out
+			}
+
+			function updateInfoPanel (parcel, results) {
+				const el = document.getElementById('infoPanel')
+				if (!el) return
+				const pid = parcel && parcel.properties && (parcel.properties.id ?? parcel.properties.ID ?? parcel.properties.code ?? parcel.properties.nom ?? parcel.properties.name)
+				if (!results || results.length === 0) {
+					el.innerHTML = `<strong>Parcelle:</strong> ${pid || '(sans id)'}<br/>✅ Aucun conflit détecté.`
+					try { console.log(`[Analyse] Parcelle: ${pid || '(sans id)'} — ✅ Aucun conflit détecté.`) } catch (e) {}
+					// >>> Ajout: notifier le parent avec le résumé
+					postToParent('kadastr:leve:analysis', {
+						parcelId: pid || '(sans id)',
+						html: el.innerHTML,
+						text: `Parcelle: ${pid || '(sans id)'} — Aucun conflit détecté.`
+					})
+					return
+				}
+				const lines = []
+				lines.push(`<strong>Parcelle:</strong> ${pid || '(sans id)'}`)
+				const consoleLines = []
+				results.forEach(r => {
+					let msg = ''
+					if (r.cfg.category === 'restriction') msg = '⚠ Ce terrain est soumis à une restriction d’utilité publique.'
+					else if (r.cfg.category === 'litige') msg = '⚠ Ce terrain est en litige.'
+					else if (r.cfg.category === 'aire') msg = '⚠ Ce terrain intersecte une zone protégée.'
+					else if (r.cfg.category === 'dpl' || r.cfg.category === 'dpm') msg = '⚠ Ce terrain intersecte une zone inconstructible (DPL/DPM).'
+					else if (r.cfg.category && r.cfg.category.startsWith('tf_')) msg = '⚠ Chevauchement avec un Titre Foncier.'
+					else if (r.cfg.category === 'enreg_ind') msg = 'ℹ Chevauchement avec une parcelle enregistrée.'
+					else if (r.cfg.category === 'aif') msg = 'ℹ Chevauchement avec une zone AIF.'
+					else if (r.cfg.category === 'zone_inondable') msg = '⚠ Ce terrain est en zone inondable.'
+					else msg = 'ℹ Chevauchement détecté.'
+					const rule = RULES[r.cfg.category]
+					if (r.proximity && rule && rule.proximityMeters > 0) {
+						msg += ` (proximité < ${rule.proximityMeters} m)`
+					}
+					lines.push(`<div style='margin-top:6px'><em>${r.cfg.name}</em> — ${msg}</div>`)
+					consoleLines.push(`${r.cfg.name} — ${msg}`)
+					r.hits.slice(0, 3).forEach(h => {
+						const attrs = extractMainAttributes(h.f.properties || {})
+						const kv = Object.entries(attrs).map(([k, v]) => `${k}: ${v}`).join(', ')
+						if (kv) lines.push(`<div style='color:#4b5563; font-size:12px'>${kv}</div>`)
+					})
+					if (r.hits.length > 3) lines.push(`<div style='color:#6b7280; font-size:12px'>+ ${r.hits.length - 3} autres entités…</div>`)
+				})
+				el.innerHTML = lines.join('')
+				try {
+					console.log(`[Analyse] Parcelle: ${pid || '(sans id)'}`)
+					consoleLines.forEach(m => console.log(`[Analyse] ${m}`))
+				} catch (e) {}
+				// >>> Ajout: notifier le parent avec le résumé riche (HTML + texte brut)
+				postToParent('kadastr:leve:analysis', {
+					parcelId: pid || '(sans id)',
+					html: el.innerHTML,
+					text: lines.join('\n').replace(/<[^>]+>/g, '')
+				})
+			}
+
+			map.on('load', async () => {
+				await initDatasetSelect()
+				await loadCatalogLayers()
+				applyStoredRules()
+				renderRulesUI()
+				await initLevesUI()
+			})
+
+			function renderLegend () {
+				const legend = document.getElementById('legend')
+				legend.innerHTML = ''
+				legendItems.forEach(it => {
+					const item = document.createElement('div')
+					item.className = 'item'
+					const sw = document.createElement('span')
+					sw.className = 'swatch'
+					sw.style.background = it.color
+					const label = document.createElement('span')
+					label.textContent = it.label
+					if (it.layerId && map.getLayer(it.layerId)) {
+						const vis = map.getLayoutProperty(it.layerId, 'visibility') || 'visible'
+						if (vis === 'none') item.classList.add('hidden')
+					}
+					item.appendChild(sw)
+					item.appendChild(label)
+					legend.appendChild(item)
+				})
+			}
+
+			function visibilityStorageKey () {
+				return `mapStep4:visibility:${currentDatasetSource || 'default'}`
+			}
+
+			function loadVisibilityMap () {
+				try { return JSON.parse(localStorage.getItem(visibilityStorageKey()) || '{}') } catch (e) { return {} }
+			}
+
+			function saveVisibilityMap (m) {
+				try { localStorage.setItem(visibilityStorageKey(), JSON.stringify(m)) } catch (e) {}
+			}
+
+			async function initDatasetSelect () {
+				const sel = document.getElementById('datasetSelect')
+				const manual = document.getElementById('datasetManual')
+				const loadBtn = document.getElementById('datasetLoadBtn')
+				const reloadBtn = document.getElementById('datasetReloadBtn')
+				sel.innerHTML = ''
+				let list = await fetchDatasetList()
+				list.forEach(it => {
+					const opt = document.createElement('option')
+					const name = typeof it === 'string' ? it : it.name
+					opt.value = name
+					opt.textContent = name
+					sel.appendChild(opt)
+				})
+				const preferred = localStorage.getItem('mapStep4:lastDataset') || 'aif.geojson'
+				const hasPreferred = list.some(x => (typeof x === 'string' ? x : x.name) === preferred)
+				if (hasPreferred) sel.value = preferred
+				else manual.value = preferred
+				sel.addEventListener('change', async () => {
+					localStorage.setItem('mapStep4:lastDataset', sel.value)
+					await loadDataset(sel.value)
+				})
+				loadBtn.addEventListener('click', async () => {
+					const v = manual.value && manual.value.trim()
+					if (!v) return
+					localStorage.setItem('mapStep4:lastDataset', v)
+					await loadDataset(v)
+				})
+				reloadBtn.addEventListener('click', async () => {
+					const v = manual.value && manual.value.trim()
+					const chosen = v || sel.value || currentDatasetSource
+					if (!chosen) return
+					await loadDataset(chosen, true)
+				})
+				manual.addEventListener('keydown', async e => {
+					if (e.key === 'Enter') {
+						e.preventDefault()
+						loadBtn.click()
+					}
+				})
+				const start = hasPreferred ? sel.value : manual.value
+				if (start) await loadDataset(start)
+			}
+
+			async function fetchDatasetList () {
+				// 1) Essai via API serveur custom
+				try {
+					const res = await fetch('/api/geojson')
+					if (res.ok) return await res.json()
+				} catch (e) { /* ignore */ }
+				// 2) Fallback via index statique
+				try {
+					// Désactive le cache pour éviter les 304 sans body
+					const res2 = await fetch('geojson/index.json', { cache: 'no-store' })
+					if (res2.ok) {
+						const idx = await res2.json()
+						if (Array.isArray(idx)) return idx
+						if (idx && Array.isArray(idx.files)) return idx.files
+					}
+				} catch (e) { /* ignore */ }
+				// 3) Fallback vide => on utilisera le champ manuel
+				return []
+			}
+
+			async function loadDataset (fileName, reload = false) {
+				if (!fileName) return
+				selectedId = null
+				selectedFeature = null
+				document.getElementById('exportBtn').disabled = true
+				document.getElementById('selectionStatus').textContent = 'Aucune sélection'
+				try {
+					const isDirect = /^(https?:)?\//.test(fileName) || fileName.includes('/')
+					let url = isDirect ? fileName : `geojson/${encodeURIComponent(fileName)}`
+					if (reload) url += (url.includes('?') ? '&' : '?') + 't=' + Date.now()
+					const res = await fetch(url, { cache: 'no-store' })
+					if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`)
+					const ct = res.headers.get('content-type') || ''
+					let data = null
+					if (ct.includes('application/json')) {
+						data = await res.json()
+					} else {
+						const text = await res.text()
+						try { data = text ? JSON.parse(text) : null } catch (e) {
+							throw new Error(`Contenu non JSON pour ${url}`)
+						}
+					}
+					if (!data || data.type !== 'FeatureCollection') {
+						console.warn('Dataset chargé, mais pas un FeatureCollection. Fallback à vide.', { url, dtype: data && data.type })
+						parcellesData = { type: 'FeatureCollection', features: [] }
+					} else {
+						parcellesData = data
+					}
+				} catch (err) {
+					const msg = (err && err.message) ? err.message : String(err)
+					console.error(`Erreur de chargement du GeoJSON: ${msg}`)
+					parcellesData = { type: 'FeatureCollection', features: [] }
+				}
+				if (parcellesData && parcellesData.crs && String(parcellesData.crs.properties && parcellesData.crs.properties.name || '').includes('32631')) {
+					proj4.defs('EPSG:32631', '+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs +type=crs')
+					parcellesData = reprojectFeatureCollection(parcellesData, 'EPSG:32631', 'EPSG:4326')
+				}
+				currentDatasetSource = fileName
+				const src = map.getSource('parcelles')
+				if (src) src.setData(parcellesData)
+				else map.addSource('parcelles', { type: 'geojson', data: parcellesData, generateId: true })
+				await rebuildLayersForData()
+				updateSearchConfig()
+			}
+
+			function clearLayers () {
+				const ids = [
+					'aif-low','aif-mid','aif-high','aif-borders',
+					'parcelles-public','parcelles-prive','parcelles-sensible','parcelles-borders',
+					'dataset-fill','dataset-borders',
+				]
+				ids.forEach(id => { if (map.getLayer(id)) map.removeLayer(id) })
+				currentFillLayerIds = []
+				currentBorderLayerId = ''
+			}
+
+			async function rebuildLayersForData () {
+				clearLayers()
+				const hasAIF = parcellesData.features && parcellesData.features.some(ft => typeof ft.properties.TF_alea !== 'undefined')
+				const hasStatus = parcellesData.features && parcellesData.features.some(ft => typeof ft.properties.status !== 'undefined')
+				if (hasAIF) buildAifLayers()
+				else if (hasStatus) buildStatusLayers()
+				else buildSingleLayers()
+				renderLegend()
+				renderToggles()
+				bindInteractions(currentFillLayerIds)
+			}
+
+			function computeAifCounts () {
+				let low = 0, mid = 0, high = 0
+				if (parcellesData && parcellesData.features) {
+					parcellesData.features.forEach(ft => {
+						const v = ft.properties && ft.properties.TF_alea
+						if (typeof v === 'number') {
+							if (v <= 33) low++
+							else if (v >= 34 && v <= 66) mid++
+							else if (v >= 67) high++
+						}
+					})
+				}
+				return { low, mid, high }
+			}
+
+			function computeStatusCounts () {
+				let pub = 0, prive = 0, sens = 0
+				if (parcellesData && parcellesData.features) {
+					parcellesData.features.forEach(ft => {
+						const s = ft.properties && ft.properties.status
+						if (s === 'Public') pub++
+						else if (s === 'Privé') prive++
+						else if (s === 'Zone sensible') sens++
+					})
+				}
+				return { pub, prive, sens }
+			}
+
+			function buildAifLayers () {
+				const counts = computeAifCounts()
+				map.addLayer({ id: 'aif-low', type: 'fill', source: 'parcelles', filter: ['<=', ['get', 'TF_alea'], 33], paint: { 'fill-color': levelsColors.low, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'aif-mid', type: 'fill', source: 'parcelles', filter: ['all', ['>=', ['get', 'TF_alea'], 34], ['<=', ['get', 'TF_alea'], 66]], paint: { 'fill-color': levelsColors.mid, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'aif-high', type: 'fill', source: 'parcelles', filter: ['>=', ['get', 'TF_alea'], 67], paint: { 'fill-color': levelsColors.high, 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'aif-borders', type: 'line', source: 'parcelles', paint: { 'line-color': ['case', ['boolean', ['feature-state', 'selected'], false], '#FFD700', '#1f2937'], 'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3.0, ['case', ['boolean', ['feature-state', 'hover'], false], 2.4, 1.5]] } })
+				currentFillLayerIds = ['aif-low','aif-mid','aif-high']
+				currentBorderLayerId = 'aif-borders'
+				legendItems = [
+					{ label: `AIF faible (${counts.low})`, color: levelsColors.low, layerId: 'aif-low' },
+					{ label: `AIF moyen (${counts.mid})`, color: levelsColors.mid, layerId: 'aif-mid' },
+					{ label: `AIF élevé (${counts.high})`, color: levelsColors.high, layerId: 'aif-high' },
+				]
+			}
+
+			function buildStatusLayers () {
+				const counts = computeStatusCounts()
+				map.addLayer({ id: 'parcelles-public', type: 'fill', source: 'parcelles', filter: ['==', ['get', 'status'], 'Public'], paint: { 'fill-color': statusColors['Public'], 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'parcelles-prive', type: 'fill', source: 'parcelles', filter: ['==', ['get', 'status'], 'Privé'], paint: { 'fill-color': statusColors['Privé'], 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'parcelles-sensible', type: 'fill', source: 'parcelles', filter: ['==', ['get', 'status'], 'Zone sensible'], paint: { 'fill-color': statusColors['Zone sensible'], 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'parcelles-borders', type: 'line', source: 'parcelles', paint: { 'line-color': ['case', ['boolean', ['feature-state', 'selected'], false], '#FFD700', '#1f2937'], 'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3.0, ['case', ['boolean', ['feature-state', 'hover'], false], 2.4, 1.5]] } })
+				currentFillLayerIds = ['parcelles-public','parcelles-prive','parcelles-sensible']
+				currentBorderLayerId = 'parcelles-borders'
+				legendItems = [
+					{ label: `Parcelles publiques (${counts.pub})`, color: statusColors['Public'], layerId: 'parcelles-public' },
+					{ label: `Parcelles privées (${counts.prive})`, color: statusColors['Privé'], layerId: 'parcelles-prive' },
+					{ label: `Zones sensibles (${counts.sens})`, color: statusColors['Zone sensible'], layerId: 'parcelles-sensible' },
+				]
+			}
+
+			function buildSingleLayers () {
+				map.addLayer({ id: 'dataset-fill', type: 'fill', source: 'parcelles', paint: { 'fill-color': '#3b82f6', 'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.7, 0.45] } })
+				map.addLayer({ id: 'dataset-borders', type: 'line', source: 'parcelles', paint: { 'line-color': ['case', ['boolean', ['feature-state', 'selected'], false], '#FFD700', '#1f2937'], 'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 3.0, ['case', ['boolean', ['feature-state', 'hover'], false], 2.0, 1.2]] } })
+				currentFillLayerIds = ['dataset-fill']
+				currentBorderLayerId = 'dataset-borders'
+				legendItems = [ { label: 'Entités', color: '#3b82f6', layerId: 'dataset-fill' } ]
+			}
+
+			function renderToggles () {
+				const root = document.getElementById('toggles')
+				root.innerHTML = ''
+				const visMap = loadVisibilityMap()
+				legendItems.forEach(it => {
+					const lab = document.createElement('label')
+					const cb = document.createElement('input')
+					cb.type = 'checkbox'
+					cb.setAttribute('data-layer', it.layerId)
+					const initialChecked = visMap[it.layerId] !== false
+					cb.checked = initialChecked
+					if (!initialChecked && map.getLayer(it.layerId)) {
+						map.setLayoutProperty(it.layerId, 'visibility', 'none')
+					}
+					cb.addEventListener('change', e => {
+						const id = e.target.getAttribute('data-layer')
+						const visible = e.target.checked ? 'visible' : 'none'
+						if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible)
+						const m = loadVisibilityMap()
+						m[id] = e.target.checked
+						saveVisibilityMap(m)
+						renderLegend()
+					})
+					lab.appendChild(cb)
+					lab.appendChild(document.createTextNode(' ' + it.label))
+					root.appendChild(lab)
+				})
+				renderLegend()
+			}
+
+			function bindInteractions (layerIds) {
+				layerIds.forEach(id => {
+					if (boundLayerIds.has(id)) return
+					boundLayerIds.add(id)
+					map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer' })
+					map.on('mouseleave', id, () => {
+						map.getCanvas().style.cursor = ''
+						if (hoveredId !== null) {
+							map.setFeatureState({ source: 'parcelles', id: hoveredId }, { hover: false })
+							hoveredId = null
+						}
+					})
+					map.on('mousemove', id, e => {
+						const f = e.features && e.features[0]
+						if (!f) return
+						const fid = f.id
+						if (hoveredId !== null && hoveredId !== fid) {
+							map.setFeatureState({ source: 'parcelles', id: hoveredId }, { hover: false })
+						}
+						hoveredId = fid
+						map.setFeatureState({ source: 'parcelles', id: hoveredId }, { hover: true })
+					})
+					map.on('click', id, e => {
+						const f = e.features && e.features[0]
+						if (!f) return
+						const parcelCode = f.properties && (f.properties.id ?? f.properties.ID ?? f.properties.code)
+						const departement = f.properties && f.properties.departement
+						const TF_alea = f.properties && f.properties.TF_alea
+						if (selectedId !== null) {
+							map.setFeatureState({ source: 'parcelles', id: selectedId }, { selected: false })
+						}
+						selectedId = f.id
+						let original = null
+						if (parcellesData && parcellesData.features) {
+							original = parcellesData.features.find(ft => String(ft.properties.id || '') === String(parcelCode || ''))
+						}
+						selectedFeature = original || f
+						map.setFeatureState({ source: 'parcelles', id: selectedId }, { selected: true })
+						document.getElementById('exportBtn').disabled = false
+						document.getElementById('selectionStatus').textContent = `Sélection: ${parcelCode ?? '(sans id)'}`
+						new mapboxgl.Popup({ offset: 12 })
+							.setLngLat(e.lngLat)
+							.setHTML(
+								`<strong>Parcelle ${parcelCode ?? '(sans id)'}</strong><br/>` +
+								`Département: ${departement || 'N/A'}<br/>` +
+								`AIF: ${typeof TF_alea !== 'undefined' ? TF_alea : 'N/A'}`,
+							)
+							.addTo(map)
+						analyzeIntersections(selectedFeature)
+					})
+				})
+			}
+
+			const form = document.getElementById('searchForm')
+			const input = document.getElementById('searchInput')
+			const statusEl = document.getElementById('searchStatus')
+
+			function updateSearchConfig () {
+				// Heuristique simple par nom de dataset + propriétés
+				let idKeys = ['id','ID','code']
+				let textKeys = ['nom','name','libelle','label','designation','type','status','departement','commune','arrondissement','section','secteur','quartier','code_site','nom_site','categorie','classe','zone']
+				const name = (currentDatasetSource || '').toLowerCase()
+				if (name.includes('air') || name.includes('aire') || name.includes('protege')) {
+					idKeys = ['code','id','ID']
+					textKeys = ['nom_site','name','nom','categorie','classe','zone','libelle','label']
+				} else if (name.includes('dpl') || name.includes('dpm')) {
+					idKeys = ['code','id','ID']
+					textKeys = ['nom','name','libelle','label','designation','type','zone','secteur','commune','departement']
+				}
+				const ft = parcellesData && parcellesData.features && parcellesData.features[0]
+				if (ft && ft.properties) {
+					const keys = Object.keys(ft.properties)
+					textKeys = textKeys.filter(k => keys.includes(k))
+					if (textKeys.length === 0) textKeys = keys.filter(k => typeof ft.properties[k] === 'string').slice(0, 8)
+				}
+				activeSearchIdKeys = idKeys
+				activeSearchTextKeys = textKeys
+			}
+
+			function getFeatureLabel (p) {
+				return p.id ?? p.ID ?? p.code ?? p.nom ?? p.name ?? p.libelle ?? p.label ?? p.designation ?? '(sans id)'
+			}
+
+			form.addEventListener('submit', e => {
+				e.preventDefault()
+				const query = input.value && input.value.trim()
+				if (!query || !parcellesData) return
+				let f = parcellesData.features.find(ft => {
+					const p = ft.properties || {}
+					const ids = activeSearchIdKeys.map(k => p[k]).filter(v => v !== undefined && v !== null)
+					return ids.some(v => String(v).toLowerCase() === query.toLowerCase())
+				})
+				if (!f) {
+					const fields = activeSearchTextKeys
+					const q = query.toLowerCase()
+					f = parcellesData.features.find(ft => {
+						const p = ft.properties || {}
+						return fields.some(key => {
+							const v = p[key]
+							return typeof v === 'string' && v.toLowerCase().includes(q)
+						})
+					})
+				}
+				if (!f) {
+					statusEl.textContent = `Aucune parcelle trouvée pour "${query}"`
+					return
+				}
+				statusEl.textContent = `"${getFeatureLabel(f.properties)}" trouvée`
+
+				const ring = getFirstRing(f.geometry)
+				const bounds = getBounds(ring)
+				map.fitBounds(bounds, { padding: 40, duration: 900 })
+
+				const center = [
+					(bounds[0][0] + bounds[1][0]) / 2,
+					(bounds[0][1] + bounds[1][1]) / 2,
+				]
+				new mapboxgl.Popup({ offset: 12 })
+					.setLngLat(center)
+					.setHTML(
+						`<strong>Parcelle ${f.properties.id}</strong><br/>` +
+						`Département: ${f.properties.departement || 'N/A'}<br/>` +
+						`AIF: ${typeof f.properties.TF_alea !== 'undefined' ? f.properties.TF_alea : 'N/A'}`,
+					)
+					.addTo(map)
+
+				if (selectedId !== null) {
+					map.setFeatureState({ source: 'parcelles', id: selectedId }, { selected: false })
+				}
+				if (typeof f.id !== 'undefined') {
+					selectedId = f.id
+					selectedFeature = f
+					map.setFeatureState({ source: 'parcelles', id: selectedId }, { selected: true })
+					document.getElementById('exportBtn').disabled = false
+					document.getElementById('selectionStatus').textContent = `Sélection: ${f.properties.id}`
+					analyzeIntersections(selectedFeature)
+				}
+			})
+
+			function getBounds (ring) {
+				let minX = Infinity, minY = Infinity
+				let maxX = -Infinity, maxY = -Infinity
+				ring.forEach(c => {
+					const [x, y] = c
+					if (x < minX) minX = x
+					if (y < minY) minY = y
+					if (x > maxX) maxX = x
+					if (y > maxY) maxY = y
+				})
+				return [[minX, minY], [maxX, maxY]]
+			}
+
+			function getFirstRing (geom) {
+				if (!geom) return []
+				if (geom.type === 'Polygon') return geom.coordinates[0]
+				if (geom.type === 'MultiPolygon') return (geom.coordinates[0] && geom.coordinates[0][0]) || []
+				return []
+			}
+
+			// Les toggles sont rendus et branchés dynamiquement via renderToggles()
+
+			document.getElementById('exportBtn').addEventListener('click', () => {
+				if (!selectedFeature) return
+				const geo = {
+					type: 'FeatureCollection',
+					features: [
+						{
+							type: 'Feature',
+							properties: selectedFeature.properties,
+							geometry: selectedFeature.geometry,
+						},
+					],
+				}
+				const blob = new Blob([JSON.stringify(geo, null, 2)], { type: 'application/geo+json' })
+				const url = URL.createObjectURL(blob)
+				const a = document.createElement('a')
+				a.href = url
+				a.download = `parcelle_${selectedFeature.properties.id || 'selection'}.geojson`
+				document.body.appendChild(a)
+				a.click()
+				document.body.removeChild(a)
+				URL.revokeObjectURL(url)
+			})
+		</script>
+	</body>
+</html>
