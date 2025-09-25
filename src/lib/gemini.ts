@@ -34,13 +34,14 @@ export async function generateAnswer (
 ) {
     const modelId = process.env.CHAT_MODEL || 'gemini-2.5-flash'
 
-  const system = [
+const system = [
     'Tu es un chatbot spécialisé en foncier du Bénin.',
-    "L'utilisateur peut poser des questions ou engager d'autres sujets, mais tu dois recentrer la conversation sur le foncier béninois si elle s'écarte.",
-    "Si la conversation dévie, rappelle poliment l'utilisateur et propose une question ou un angle lié au foncier au Bénin.",
-    'Réponds uniquement si l\'information figure dans les documents fournis. Si tu ne trouves rien, réponds exactement :',
-    '"Je n\'ai pas cette information dans mes ressources foncières béninoises."',
-  ].join(' ')
+    "Utilise les documents fournis comme source principale, mais tu peux compléter avec tes connaissances générales et des informations fiables lorsque nécessaire.",
+    "Lorsque tu complètes avec des connaissances externes, précise clairement si l'information provient des documents ou de sources générales.",
+    "Si des résultats web (metadata.source=web) sont fournis dans le contexte, synthétise-les et ajoute à la fin une section intitulée “## Sources” listant les URL pertinentes.",
+    "Si la conversation dévie, recentre poliment sur le foncier béninois et propose un angle ou une question liée au sujet.",
+    "Formate toujours ta réponse en Markdown clair et concis: titres (##), listes à puces, tableaux si utile, et blocs de code ```lang si nécessaire.",
+].join(' ')
 
     const ctx = (context || []).map((c, i) => {
         const m = c.metadata || {}

@@ -17,7 +17,10 @@ import {
   VolumeX,
   Download,
   Trash2,
+  Globe, // + ajouter l'icône
 } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -300,17 +303,56 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white", isUser ? "bg-primary" : "bg-secondary")}>
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+      {/* Avatar */}
+      <div>
+        <div className={cn("shrink-0 mt-1 rounded-full grid place-items-center", isUser ? "bg-primary/10" : "bg-muted")}>
+        {isUser ? <User className="h-5 w-5 text-primary p-1" /> : <Bot className="h-5 w-5 text-muted-foreground p-1" />}
       </div>
-      <div className="space-y-2">
-        {message.content && (
-          <div className={cn("rounded-lg px-3 py-2 text-sm", isUser ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+      </div>
+
+      {/* Bubble */}
+      <div className={cn(
+        "rounded-2xl px-3 py-2 text-sm shadow-sm border",
+        isUser ? "bg-primary text-primary-foreground border-primary/20" : "bg-background border-border"
+      )}>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">
             {message.content}
           </div>
+        ) : (
+          // >>> Rendu Markdown pour l'assistant
+          <div className="whitespace-pre-wrap break-words">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                  a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noreferrer" className="underline" />,
+                  code: ({ inline, className, children, ...props }: any) =>
+                    inline ? (
+                      <code className="px-1 py-[2px] rounded bg-muted text-foreground/90" {...props}>{children}</code>
+                    ) : (
+                      <pre className="p-3 rounded-md bg-muted overflow-x-auto"><code {...props}>{children}</code></pre>
+                    ),
+                  ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 space-y-1" {...props} />,
+                  ol: ({ node, ...props }: any) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
+                  h2: ({ node, ...props }: any) => <h2 className="mt-2 mb-1 font-semibold text-base" {...props} />,
+                  h3: ({ node, ...props }: any) => <h3 className="mt-2 mb-1 font-semibold" {...props} />,
+                  table: ({ node, ...props }: any) => <div className="overflow-x-auto"><table className="border-collapse text-xs" {...props} /></div>,
+                  th: ({ node, ...props }: any) => <th className="border px-2 py-1 bg-muted/50" {...props} />,
+                  td: ({ node, ...props }: any) => <td className="border px-2 py-1" {...props} />,
+                }}
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
         )}
-        {message.audioFile && <AudioPlayer src={message.audioFile} onRemove={() => onRemoveAudio?.(message.id)} />}
-        <div className="text-xs text-muted-foreground" suppressHydrationWarning>{formatTime(message.timestamp)}</div>
+        {message.audioFile && (
+          <div className="mt-2">
+            <AudioPlayer src={message.audioFile} onRemove={onRemoveAudio ? () => onRemoveAudio(message.id) : undefined} />
+          </div>
+        )}
+        <div className={cn("mt-1 text-[10px]", isUser ? "text-primary-foreground/70 text-right" : "text-muted-foreground/70")}>
+          {formatTime(message.timestamp)}
+        </div>
       </div>
     </motion.div>
   )
@@ -353,6 +395,7 @@ export function AudioChatbotWidget({
   const [inputValue, setInputValue] = useState("")
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [useWeb, setUseWeb] = useState(false) // + état pour la recherche web
   // const [isPending, startTransition] = useTransition()
   const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -416,6 +459,7 @@ export function AudioChatbotWidget({
           history: prior
             .filter(m => m.content && m.content.trim().length)
             .map(m => ({ role: m.sender, content: m.content })),
+          useWeb, // + activer la recherche web côté serveur
         }),
       })
       const data = await res.json()
@@ -610,15 +654,28 @@ export function AudioChatbotWidget({
                 </div>
               )}
 
+              {/* Toggle Recherche Web */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setUseWeb(v => !v)}
+                disabled={isProcessing}
+                className={`h-9 w-9 rounded-full hover:bg-muted/60 ${useWeb ? "bg-primary text-primary-foreground" : ""}`}
+                aria-pressed={useWeb}
+                aria-label="Activer la recherche web"
+                title={useWeb ? "Recherche web activée" : "Activer la recherche web"}
+              >
+                <Globe className="h-4 w-4" />
+              </Button>
+
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={isProcessing}
-                className={`h-9 w-9 rounded-full hover:bg-muted/60 ${
-                  isRecording ? "bg-red-500 text-white hover:bg-red-600" : ""
-                }`}
+                className={`h-9 w-9 rounded-full hover:bg-muted/60 ${isRecording ? "bg-red-500 text-white hover:bg-red-600" : ""}`}
                 aria-label={isRecording ? "Arrêter l'enregistrement" : "Démarrer l'enregistrement"}
               >
                 <Mic className="h-4 w-4" />
