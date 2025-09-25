@@ -22,6 +22,17 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
+// Petite pastille "3 points" animés
+function TypingDots() {
+  return (
+    <div className="inline-flex items-center gap-1 text-muted-foreground">
+      <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:0ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:150ms]" />
+      <span className="w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:300ms]" />
+    </div>
+  )
+}
+
 export type ChatPosition = "bottom-right" | "bottom-left"
 export type ChatSize = "sm" | "md" | "lg" | "xl" | "full"
 
@@ -370,8 +381,11 @@ export function AudioChatbotWidget({
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, audioFile: undefined } : m)))
   }
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim() && audioFiles.length === 0 && !audioBlob) return
+
+    // snapshot de l'historique AVANT d’ajouter le nouveau message
+    const prior = messages
 
     const msg: Message = {
       id: `${Date.now()}`,
@@ -392,19 +406,52 @@ export function AudioChatbotWidget({
     setInputValue("")
     setIsProcessing(true)
 
-    startTransition(() => {
-      setTimeout(() => {
-        const ai: Message = {
-          id: `${Date.now() + 1}`,
-          content:
-            "J’ai reçu votre message." + (msg.audioFile ? " Et votre fichier audio également." : "") + " Comment puis-je vous aider ?",
-          sender: "ai",
-          timestamp: new Date(),
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: msg.content || "Bonjour",
+          context: [],
+          history: prior
+            .filter(m => m.content && m.content.trim().length)
+            .map(m => ({ role: m.sender, content: m.content })),
+        }),
+      })
+      const data = await res.json()
+      const reply = data?.text || "Je n’ai pas cette information dans mes ressources foncières béninoises."
+
+      const ai: Message = {
+        id: `${Date.now() + 1}`,
+        content: "",
+        sender: "ai",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, ai])
+      setIsProcessing(false)
+
+      const speed = 18
+      ;(async () => {
+        for (let i = 1; i <= reply.length; i++) {
+          const delay = reply[i - 1] === " " ? 0 : speed
+          await new Promise((r) => setTimeout(r, delay))
+          setMessages((prev) =>
+            prev.map((m) => (m.id === ai.id ? { ...m, content: reply.slice(0, i) } : m))
+          )
         }
-        setMessages((prev) => [...prev, ai])
-        setIsProcessing(false)
-      }, 1000)
-    })
+      })()
+    } catch {
+      setIsProcessing(false)
+      const ai: Message = {
+        id: `${Date.now() + 1}`,
+        content: "Une erreur est survenue lors de l’appel à l’IA.",
+        sender: "ai",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, ai])
+    } finally {
+      // rien
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -463,8 +510,8 @@ export function AudioChatbotWidget({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <div className="w-fit rounded-full bg-muted text-muted-foreground px-3 py-1 text-xs shadow-sm">
-                L’assistant rédige…
+              <div className="w-fit rounded-full bg-muted px-3 py-1 text-xs shadow-sm">
+                <TypingDots />
               </div>
             </motion.div>
           )}
