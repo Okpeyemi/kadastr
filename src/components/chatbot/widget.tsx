@@ -371,6 +371,20 @@ function ChatMessageList({ messages, onRemoveAudio }: { messages: Message[]; onR
   )
 }
 
+// + helper: convertir un Blob en base64 (pour l’API)
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const res = String(reader.result || "")
+      const b64 = res.includes(",") ? res.split(",")[1]! : res
+      resolve(b64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
 export function AudioChatbotWidget({
   position = "bottom-right",
   size = "md",
@@ -401,6 +415,14 @@ export function AudioChatbotWidget({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, level, elapsedSeconds } = useVoiceRecorder()
 
+  // Envoi auto dès la fin de l’enregistrement
+  React.useEffect(() => {
+    if (audioBlob && !isRecording && !isProcessing) {
+      handleSendMessage()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioBlob, isRecording])
+
   const toggleChat = () => setIsOpen((v) => !v)
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -430,19 +452,57 @@ export function AudioChatbotWidget({
     // snapshot de l'historique AVANT d’ajouter le nouveau message
     const prior = messages
 
-    const msg: Message = {
-      id: `${Date.now()}`,
-      content: inputValue.trim(),
-      sender: "user",
-      timestamp: new Date(),
+    // --- Nouveau: préparer transcription si audio présent ---
+    let transcript = ""
+    let attachedUrl: string | undefined
+    try {
+      // Enregistré depuis le micro
+      if (audioBlob) {
+        attachedUrl = URL.createObjectURL(audioBlob)
+        const base64 = await blobToBase64(audioBlob)
+        const tr = await fetch("/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: base64, mimeType: audioBlob.type || "audio/webm", language: "fr" }),
+        })
+        const tj = await tr.json().catch(() => ({}))
+        transcript = (tj?.text || "").trim()
+        clearRecording()
+      }
+      // Fichier uploadé (premier de la liste)
+      else if (audioFiles.length > 0) {
+        attachedUrl = audioFiles[0].url
+        const resp = await fetch(attachedUrl)
+        const b = await resp.blob()
+        const base64 = await blobToBase64(b)
+        const tr = await fetch("/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audio: base64, mimeType: b.type || "audio/webm", language: "fr" }),
+        })
+        const tj = await tr.json().catch(() => ({}))
+        transcript = (tj?.text || "").trim()
+        setAudioFiles([])
+      }
+    } catch {
+      // si la transcription échoue, on continue quand même avec le texte saisi
     }
 
-    if (audioBlob) {
-      msg.audioFile = URL.createObjectURL(audioBlob)
-      clearRecording()
-    } else if (audioFiles.length > 0) {
-      msg.audioFile = audioFiles[0].url
-      setAudioFiles([])
+    const typed = inputValue.trim()
+    // Concatène si l'utilisateur a aussi tapé du texte
+    const finalContent = typed && transcript
+      ? `${typed}\n\n[Transcription]: ${transcript}`
+      : (typed || transcript)
+
+    // si rien à envoyer au final
+    if (!finalContent) return
+
+    const msg: Message = {
+      id: `${Date.now()}`,
+      content: finalContent,
+      sender: "user",
+      timestamp: new Date(),
+      audioFile: attachedUrl,
     }
 
     setMessages((prev) => [...prev, msg])
@@ -459,7 +519,7 @@ export function AudioChatbotWidget({
           history: prior
             .filter(m => m.content && m.content.trim().length)
             .map(m => ({ role: m.sender, content: m.content })),
-          useWeb, // + activer la recherche web côté serveur
+          useWeb,
         }),
       })
       const data = await res.json()
@@ -474,7 +534,7 @@ export function AudioChatbotWidget({
       setMessages((prev) => [...prev, ai])
       setIsProcessing(false)
 
-      const speed = 18
+      const speed = 12 // un peu plus rapide
       ;(async () => {
         for (let i = 1; i <= reply.length; i++) {
           const ch = reply[i - 1]
@@ -588,7 +648,7 @@ export function AudioChatbotWidget({
 
         {/* Recorded preview */}
         <AnimatePresence>
-          {audioBlob && (
+          {audioBlob && !isProcessing && (
             <motion.div
               className="p-3 border-t bg-muted/50"
               initial={{ height: 0, opacity: 0 }}
