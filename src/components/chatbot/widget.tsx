@@ -477,7 +477,8 @@ export function AudioChatbotWidget({
       const speed = 18
       ;(async () => {
         for (let i = 1; i <= reply.length; i++) {
-          const delay = reply[i - 1] === " " ? 0 : speed
+          const ch = reply[i - 1]
+          const delay = /\s|[.,;:!?]/.test(ch) ? 0 : speed
           await new Promise((r) => setTimeout(r, delay))
           setMessages((prev) =>
             prev.map((m) => (m.id === ai.id ? { ...m, content: reply.slice(0, i) } : m))
