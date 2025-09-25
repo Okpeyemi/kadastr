@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "GEMINI_API_KEY manquant." }, { status: 500 })
     }
 
-    const { question, context = [], history = [], useWeb = false }: {
+    const { question, context = [], history = [], useWeb = true }: {
       question?: string
       context?: Array<{ content: string; metadata?: ChatSourceMeta }>
       history?: Array<{ role: "user" | "ai"; content: string }>

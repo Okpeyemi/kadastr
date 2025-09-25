@@ -410,7 +410,9 @@ export function AudioChatbotWidget({
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [submittingAudio, setSubmittingAudio] = useState(false)
-  const [useWeb, setUseWeb] = useState(false) // + état pour la recherche web
+  const [useWeb, setUseWeb] = useState<boolean>(() => {
+    try { return localStorage.getItem("chat:useWeb") !== "0" } catch { return true }
+  })
   // const [isPending, startTransition] = useTransition()
   const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -426,6 +428,10 @@ export function AudioChatbotWidget({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioBlob, isRecording, submittingAudio])
+
+  React.useEffect(() => {
+    try { localStorage.setItem("chat:useWeb", useWeb ? "1" : "0") } catch {}
+  }, [useWeb])
 
   const toggleChat = () => setIsOpen((v) => !v)
 
