@@ -409,6 +409,7 @@ export function AudioChatbotWidget({
   const [inputValue, setInputValue] = useState("")
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [submittingAudio, setSubmittingAudio] = useState(false)
   const [useWeb, setUseWeb] = useState(false) // + état pour la recherche web
   // const [isPending, startTransition] = useTransition()
   const [, startTransition] = useTransition()
@@ -417,11 +418,14 @@ export function AudioChatbotWidget({
 
   // Envoi auto dès la fin de l’enregistrement
   React.useEffect(() => {
-    if (audioBlob && !isRecording && !isProcessing) {
-      handleSendMessage()
+    if (audioBlob && !isRecording && !isProcessing && !submittingAudio) {
+      setSubmittingAudio(true)
+      ;(async () => {
+        try { await handleSendMessage() } finally { setSubmittingAudio(false) }
+      })()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioBlob, isRecording])
+  }, [audioBlob, isRecording, submittingAudio])
 
   const toggleChat = () => setIsOpen((v) => !v)
 
@@ -447,12 +451,14 @@ export function AudioChatbotWidget({
   }
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() && audioFiles.length === 0 && !audioBlob) return
+    if (isProcessing || submittingAudio) return
+     if (!inputValue.trim() && audioFiles.length === 0 && !audioBlob) return
+    if (audioBlob || audioFiles.length > 0) setSubmittingAudio(true)
 
-    // snapshot de l'historique AVANT d’ajouter le nouveau message
-    const prior = messages
+     // snapshot de l'historique AVANT d’ajouter le nouveau message
+     const prior = messages
 
-    // --- Nouveau: préparer transcription si audio présent ---
+     // --- Nouveau: préparer transcription si audio présent ---
     let transcript = ""
     let attachedUrl: string | undefined
     try {
@@ -533,6 +539,7 @@ export function AudioChatbotWidget({
       }
       setMessages((prev) => [...prev, ai])
       setIsProcessing(false)
+      setSubmittingAudio(false)
 
       const speed = 12 // un peu plus rapide
       ;(async () => {
@@ -547,6 +554,7 @@ export function AudioChatbotWidget({
       })()
     } catch {
       setIsProcessing(false)
+      setSubmittingAudio(false)
       const ai: Message = {
         id: `${Date.now() + 1}`,
         content: "Une erreur est survenue lors de l’appel à l’IA.",
@@ -648,19 +656,35 @@ export function AudioChatbotWidget({
 
         {/* Recorded preview */}
         <AnimatePresence>
-          {audioBlob && !isProcessing && (
-            <motion.div
-              className="p-3 border-t bg-muted/50"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-            >
-              <AudioPlayer src={URL.createObjectURL(audioBlob)} onRemove={clearRecording} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+          {audioBlob && !isProcessing && !submittingAudio && (
+             <motion.div
+               className="p-3 border-t bg-muted/50"
+               initial={{ height: 0, opacity: 0 }}
+               animate={{ height: "auto", opacity: 1 }}
+               exit={{ height: 0, opacity: 0 }}
+             >
+               <AudioPlayer src={URL.createObjectURL(audioBlob)} onRemove={clearRecording} />
+             </motion.div>
+           )}
+</AnimatePresence>
 
-        {/* Input: champs + boutons plus premium */}
+{/* Bandeau de statut pendant l’envoi/transcription */}
+<AnimatePresence>
+  {submittingAudio && (
+    <motion.div
+      className="px-4 py-2 border-t bg-muted/60 text-sm text-muted-foreground flex items-center gap-2"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      aria-live="polite"
+    >
+      <span>Traitement de l’audio…</span>
+      <TypingDots />
+    </motion.div>
+  )}
+</AnimatePresence>
+
+{/* Input: champs + boutons plus premium */}
         <div className="p-4 border-t border-border/60 bg-card/80 backdrop-blur">
           <div className="relative flex items-center">
             {/* input file masqué */}
@@ -745,7 +769,7 @@ export function AudioChatbotWidget({
               <Button
                 type="button"
                 onClick={handleSendMessage}
-                disabled={(!inputValue.trim() && audioFiles.length === 0 && !audioBlob) || isProcessing}
+                disabled={(!inputValue.trim() && audioFiles.length === 0 && !audioBlob) || isProcessing || submittingAudio}
                 size="icon"
                 className="h-9 w-9 rounded-full shadow hover:shadow-md"
                 aria-label="Envoyer"
