@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation"; // + useSearchParams
 import { RefreshCw, Download, EyeClosed, Eye } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Image from "next/image";
@@ -69,6 +69,12 @@ export function Resultat({
   loaderDurationMs = 15000,
 }: ResultatProps) {
   const router = useRouter();
+  const searchParams = useSearchParams(); // <- query courante (/resultat?leve=...)
+  const iframeSrc = React.useMemo(() => {
+    const qs = searchParams?.toString();
+    return `/map.html${qs ? `?${qs}` : ""}`; // propage ?leve=... à l’iframe
+  }, [searchParams]);
+
   const [open, setOpen] = React.useState(true);
 
   // >>> Ajout: état lié à la levée sélectionnée depuis la carte
@@ -114,7 +120,7 @@ export function Resultat({
       <iframe
         title="Carte interactive"
         className="absolute inset-0 w-full h-full rounded-xl"
-        src="/map.html"
+        src={iframeSrc} // <-- avant: "/map.html"
         loading="lazy"
         style={{ border: 0 }}
       />
