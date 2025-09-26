@@ -8,10 +8,12 @@ import { RefreshCw, Download, EyeClosed, Eye, BadgeCheck, BadgeAlert, BadgeX } f
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Image from "next/image";
 import Lottie from "lottie-react";
-import runningAnim from "../../public/running.json";
-import { Progress } from "@/components/ui/progress";
+import loadingAnim from "../../public/loading.json";
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+// + toasts shadcn/sonner
+import { Toaster } from "@/components/ui/sonner"
+import { toast } from "sonner"
 
 // Loader centré avec progression (15s par défaut)
 export function ResultLoader({
@@ -35,8 +37,89 @@ export function ResultLoader({
     return () => cancelAnimationFrame(raf);
   }, [durationMs]);
 
+  // Remplace la progression par un carrousel de devinettes
+  const riddles = React.useMemo(
+    () => [
+      {
+        q: "Je commence la nuit et finis le matin. Qui suis-je ?",
+        options: ["La lune", "La lettre N", "Le soleil"],
+        correct: 1,
+      },
+      {
+        q: "Plus je sèche, plus je deviens mouillé. Qui suis-je ?",
+        options: ["La serviette", "La pluie", "Le savon"],
+        correct: 0,
+      },
+      {
+        q: "On me casse sans me toucher. Qui suis-je ?",
+        options: ["Le verre", "Le silence", "La glace"],
+        correct: 1,
+      },
+      {
+        q: "Je suis à vous, mais les autres m’utilisent plus que vous. Qui suis-je ?",
+        options: ["Votre nom", "Votre téléphone", "Votre maison"],
+        correct: 0,
+      },
+      {
+        q: "Je parcours le monde en restant dans un coin. Qui suis-je ?",
+        options: ["Le timbre", "La boussole", "Le globe"],
+        correct: 0,
+      },
+    ],
+    []
+  )
+  const [idx, setIdx] = React.useState(0)
+  const [showAnswer, setShowAnswer] = React.useState(false)
+  const [selected, setSelected] = React.useState<number | null>(null)
+
+  // Rotation automatique des devinettes (plus lente) et seulement après réponse
+  const ROTATE_MS = Math.max(20000, Math.min(40000, Math.floor(durationMs * 0.8))) // 20–40s ou ~80% de durationMs
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      if (selected === null) return // attendre une réponse avant de passer
+      setIdx((i) => (i + 1) % riddles.length)
+      setShowAnswer(false)
+      setSelected(null)
+    }, ROTATE_MS)
+    return () => clearInterval(id)
+  }, [riddles.length, durationMs, selected])
+
+  // Navigation manuelle: nécessite d’avoir répondu
+  const next = () => {
+    if (selected === null) {
+      toast("Répondez d’abord", { description: "Choisissez une option avant de continuer." })
+      return
+    }
+    setIdx((i) => (i + 1) % riddles.length)
+    setShowAnswer(false)
+    setSelected(null)
+  }
+  const prev = () => {
+    if (selected === null) {
+      toast("Répondez d’abord", { description: "Choisissez une option avant de revenir." })
+      return
+    }
+    setIdx((i) => (i - 1 + riddles.length) % riddles.length)
+    setShowAnswer(false)
+    setSelected(null)
+  }
+
+  const current = riddles[idx]
+  const correctIdx = current.options[current.correct] ? current.correct : 0
+  const correctText = current.options[correctIdx]
+
+  function handleAnswer(i: number) {
+    setSelected(i)
+    if (i === correctIdx) {
+      toast.success("Bravo ! Bonne réponse ✅", { description: correctText })
+      setShowAnswer(true)
+    } else {
+      toast.error("Raté ❌", { description: "Essaie encore." })
+    }
+  }
+
   return (
-    <div className={className} aria-busy={value < 100} aria-live="polite">
+    <div className={className} aria-busy="true" aria-live="polite">
       <div className="mb-2 text-center">
         <div className="text-foreground font-medium">Traitement en cours…</div>
         <div className="text-muted-foreground text-sm">
@@ -44,11 +127,72 @@ export function ResultLoader({
         </div>
       </div>
       <div className="flex w-full justify-center">
-        <Lottie animationData={runningAnim} loop={true} style={{ width: 400, height: 400 }} />
+        <Lottie animationData={loadingAnim} loop={true} style={{ width: 400, height: 400 }} />
       </div>
-      <Progress value={value} />
-      <div className="text-muted-foreground mt-2 text-xs text-center">
-        {value}% terminé
+
+      {/* Devinettes */}
+      <div className="mt-3 mx-auto w-full max-w-md rounded-lg border bg-white/80 backdrop-blur p-3 shadow-sm">
+        <div className="text-xs font-semibold text-slate-600">Devinette #{idx + 1}</div>
+        <div className="mt-1 text-sm text-slate-800">{current.q}</div>
+
+        {/* Choix de réponses */}
+        <div className="mt-2 grid gap-2">
+          {current.options.map((opt, i) => {
+            const isSelected = selected === i
+            const isCorrect = i === correctIdx
+            return (
+              <Button
+                key={i}
+                type="button"
+                size="sm"
+                variant={isSelected ? (isCorrect ? "success" : "destructive") : "outline"}
+                className="justify-start cursor-pointer"
+                onClick={() => handleAnswer(i)}
+              >
+                {opt}
+              </Button>
+            )
+          })}
+        </div>
+
+        <div className="mt-2 flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="cursor-pointer"
+            onClick={() => setShowAnswer((v) => !v)}
+          >
+            {showAnswer ? "Masquer la réponse" : "Afficher la réponse"}
+          </Button>
+          <div className="ml-auto flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="cursor-pointer"
+              onClick={prev}
+              disabled={selected === null} // bloqué tant qu’aucune réponse
+            >
+              Précédente
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="cursor-pointer"
+              onClick={next}
+              disabled={selected === null} // bloqué tant qu’aucune réponse
+            >
+              Suivante
+            </Button>
+          </div>
+        </div>
+        {showAnswer && (
+          <div className="mt-2 rounded bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700">
+            Réponse: {correctText}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -189,6 +333,9 @@ export function Resultat({
 
   return (
     <div className={cn("relative w-full h-full", className)}>
+      {/* Toaster shadcn (sonner) */}
+      <Toaster richColors />
+
       {/* Overlay loader centré */}
       {showLoader && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -298,7 +445,15 @@ export function Resultat({
                   )}
                 </div>
 
-                <div className="flex justify-end items-center gap-2">
+                {/* <div className="flex justify-end items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push("/demande")}
+                    className="cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
+                  </Button>
                   <Button
                     type="button"
                     variant="success"
@@ -307,7 +462,7 @@ export function Resultat({
                   >
                     <Download className="h-4 w-4" aria-hidden /> Télécharger
                   </Button>
-                </div>
+                </div> */}
               </div>
             </CardContent>
           </Card>

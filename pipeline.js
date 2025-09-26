@@ -316,10 +316,18 @@ async function processImagesAndCreateCSV() {
 
   let imageDir = path.join(CURRENT, 'public', 'uploads');
 
-  const imageFiles = fs.readdirSync(imageDir).filter(f => ['.jpg','.jpeg','.png','.tif'].includes(path.extname(f).toLowerCase()));
+  // Chemin du CSV et suppression préalable (écrasement garanti)
+  const outPath = path.join(CURRENT, 'public', 'submission.csv');
+  try { fse.removeSync(outPath) } catch {}
+
+  const imageFiles = fs.readdirSync(imageDir).filter(f =>
+    ['.jpg','.jpeg','.png','.tif'].includes(path.extname(f).toLowerCase())
+  );
 
   const limit = pLimit(Math.min(API_KEYS.length, 4));
-  const tasks = imageFiles.map((img, idx) => limit(() => processSingleImage(path.join(imageDir, img), idx % API_KEYS.length)));
+  const tasks = imageFiles.map((img, idx) =>
+    limit(() => processSingleImage(path.join(imageDir, img), idx % API_KEYS.length))
+  );
 
   const results = await Promise.allSettled(tasks);
 
@@ -356,7 +364,7 @@ async function processImagesAndCreateCSV() {
   const header = ['Nom_du_levé', 'Coordonnées', ...GEOJSON_FILES.map(f => path.basename(f, '.geojson'))];
   const csv = Papa.unparse(csvRows, { header: true, columns: header, delimiter: ';' });
 
-  const outPath = path.join(CURRENT, 'public', 'submission.csv');
+  // Utilise outPath défini plus haut (pas de redéclaration)
   fs.writeFileSync(outPath, csv, { encoding: 'utf8' });
   console.log(`Results saved to ${outPath} (${csvRows.length} rows)`);
   console.log(`Processing completed in ${(Date.now() - startTime)/1000}s`);

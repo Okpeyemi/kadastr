@@ -135,6 +135,15 @@ export function Demandes({
                 </div>
               </CardContent>
               <CardFooter className="mt-auto flex justify-end gap-2">
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push("/demande")}
+                    className="cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
+                  </Button>
                 <Button
                   type="button"
                   onClick={() =>
@@ -144,7 +153,7 @@ export function Demandes({
                 >
                   <MapPin className="h-4 w-4" aria-hidden /> Visualiser la carte
                 </Button>
-                <Button
+                {/* <Button
                   type="button"
                   variant="success"
                   onClick={() =>
@@ -156,7 +165,7 @@ export function Demandes({
                   className="cursor-pointer"
                 >
                   <Download className="h-4 w-4" aria-hidden /> Télécharger
-                </Button>
+                </Button> */}
               </CardFooter>
             </Card>
           ) : (
@@ -218,7 +227,7 @@ export function Demandes({
                   >
                     <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
                   </Button>
-                  <Button
+                  {/* <Button
                     type="button"
                     variant="success"
                     onClick={() =>
@@ -230,7 +239,7 @@ export function Demandes({
                     className="cursor-pointer"
                   >
                     <Download className="h-4 w-4" aria-hidden /> Télécharger
-                  </Button>
+                  </Button> */}
                 </div>
               </div>
             </Card>

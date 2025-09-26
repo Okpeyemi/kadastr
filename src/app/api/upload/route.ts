@@ -1,7 +1,7 @@
 export const runtime = "nodejs"
 
 import { NextRequest, NextResponse } from "next/server"
-import { mkdir, writeFile } from "fs/promises"
+import { mkdir, writeFile, rm } from "fs/promises"
 import path from "path"
 import { put } from "@vercel/blob"
 
@@ -62,8 +62,14 @@ export async function POST(req: NextRequest) {
       url = res.url
     } else {
       // Dev: sauvegarde locale dans public/uploads (existant)
-      const uploadDir = path.join(process.cwd(), "public", "uploads")
+      const publicDir = path.join(process.cwd(), "public")
+      const uploadDir = path.join(publicDir, "uploads")
+
+      // Nettoyage: supprimer anciennes images et l'ancien CSV avant d'enregistrer le nouveau
+      await rm(uploadDir, { recursive: true, force: true }).catch(() => {})
       await mkdir(uploadDir, { recursive: true })
+      await rm(path.join(publicDir, "submission.csv"), { force: true }).catch(() => {})
+
       const base = path
         .basename(file.name, path.extname(file.name))
         .replace(/[^a-z0-9_-]/gi, "_")

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Progress } from "@/components/ui/progress";
 import Lottie from "lottie-react";
-import runningAnim from "../../public/running.json";
+import loadingAnim from "../../public/loading.json";
 
 type TraitementProps = {
   redirectTo?: string;
@@ -49,7 +49,7 @@ export function Traitement({
       </div>
       <div className="flex w-full justify-center">
         <Lottie
-          animationData={runningAnim}
+          animationData={loadingAnim}
           loop={true}
           style={{ width: 400, height: 400 }}
         />
