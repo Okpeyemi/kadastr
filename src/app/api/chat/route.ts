@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     ].join(" ")
     const statusRaw = await generateAnswer(
       statusPrompt,
-      [{ content: finalText, metadata: { source: "summary" } }],
+      [{ content: finalText ?? "", metadata: { source: "summary" } }],
       []
     )
     let status = String(statusRaw || "").trim().toLowerCase()
