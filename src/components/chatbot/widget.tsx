@@ -80,12 +80,39 @@ type AudioFile = {
 
 function useAutoScroll(content?: unknown) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [auto, setAuto] = useState(true)
+
+  const onScroll = React.useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const threshold = 40
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    setAuto(atBottom)
+  }, [])
+
   React.useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
-  }, [content])
-  return { scrollRef }
+    el.addEventListener("scroll", onScroll, { passive: true })
+    // init state
+    onScroll()
+    return () => el.removeEventListener("scroll", onScroll)
+  }, [onScroll])
+
+  React.useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (auto) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    }
+  }, [content, auto])
+
+  const scrollToBottom = React.useCallback(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  }, [])
+
+  return { scrollRef, auto, scrollToBottom }
 }
 
 function useVoiceRecorder() {
@@ -397,7 +424,7 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
 }
 
 function ChatMessageList({ messages, onRemoveAudio }: { messages: Message[]; onRemoveAudio?: (id: string) => void }) {
-  const { scrollRef } = useAutoScroll(messages)
+  const { scrollRef, auto, scrollToBottom } = useAutoScroll(messages)
   return (
     <div className="relative w-full h-full">
       <div ref={scrollRef} className="flex flex-col w-full h-full p-4 overflow-y-auto space-y-4">
@@ -405,6 +432,13 @@ function ChatMessageList({ messages, onRemoveAudio }: { messages: Message[]; onR
           <ChatMessage key={m.id} message={m} onRemoveAudio={onRemoveAudio} />
         ))}
       </div>
+      {!auto && (
+        <div className="absolute bottom-2 right-3">
+          <Button size="sm" variant="secondary" onClick={scrollToBottom}>
+            Revenir en bas
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -451,6 +485,10 @@ export function AudioChatbotWidget({
   const [useWeb, setUseWeb] = useState<boolean>(() => {
     try { return localStorage.getItem("chat:useWeb") !== "0" } catch { return true }
   })
+  // Ajout: gestion arrêt génération
+  const [isGenerating, setIsGenerating] = useState(false)
+  const generationAbortRef = useRef(false)
+  const lastAiIdRef = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, level, elapsedSeconds } = useVoiceRecorder()
 
@@ -494,10 +532,12 @@ export function AudioChatbotWidget({
 
   const handleSendMessage = async () => {
     if (isProcessing || submittingAudio) return
-     if (!inputValue.trim() && audioFiles.length === 0 && !audioBlob) return
+    if (!inputValue.trim() && audioFiles.length === 0 && !audioBlob) return
     if (audioBlob || audioFiles.length > 0) setSubmittingAudio(true)
 
-     // snapshot de l'historique AVANT d’ajouter le nouveau message
+    // reset arrêt
+    generationAbortRef.current = false
+    // snapshot de l'historique AVANT d’ajouter le nouveau message
      const prior = messages
 
      // --- Nouveau: préparer transcription si audio présent ---
@@ -580,23 +620,29 @@ export function AudioChatbotWidget({
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, ai])
+      lastAiIdRef.current = ai.id
       setIsProcessing(false)
       setSubmittingAudio(false)
+      setIsGenerating(true)
 
-      const speed = 12 // un peu plus rapide
+      const speed = 12
       ;(async () => {
         for (let i = 1; i <= reply.length; i++) {
+          if (generationAbortRef.current) break
           const ch = reply[i - 1]
           const delay = /\s|[.,;:!?]/.test(ch) ? 0 : speed
           await new Promise((r) => setTimeout(r, delay))
+          if (generationAbortRef.current) break
           setMessages((prev) =>
             prev.map((m) => (m.id === ai.id ? { ...m, content: reply.slice(0, i) } : m))
           )
         }
+        setIsGenerating(false)
       })()
     } catch {
       setIsProcessing(false)
       setSubmittingAudio(false)
+      setIsGenerating(false)
       const ai: Message = {
         id: `${Date.now() + 1}`,
         content: "Une erreur est survenue lors de l’appel à l’IA.",
@@ -606,6 +652,20 @@ export function AudioChatbotWidget({
       setMessages((prev) => [...prev, ai])
     } finally {
       // rien
+    }
+  }
+
+  // Bouton Arrêter: coupe la génération en cours
+  const stopGeneration = () => {
+    generationAbortRef.current = true
+    setIsGenerating(false)
+    setIsProcessing(false)
+    setSubmittingAudio(false)
+    const id = lastAiIdRef.current
+    if (id) {
+      setMessages(prev =>
+        prev.map(m => m.id === id ? { ...m, content: `${m.content} … [réponse arrêtée]` } : m)
+      )
     }
   }
 
@@ -658,9 +718,9 @@ export function AudioChatbotWidget({
 
         {/* Indicateur de saisie / traitement */}
         <AnimatePresence>
-          {isProcessing && (
+          {(isProcessing || isGenerating) && (
             <motion.div
-              className="px-4 py-2"
+              className="px-4 py-2 flex items-center gap-2"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -668,6 +728,9 @@ export function AudioChatbotWidget({
               <div className="w-fit rounded-full bg-muted px-3 py-1 text-xs shadow-sm">
                 <TypingDots />
               </div>
+              <Button size="sm" variant="outline" onClick={stopGeneration}>
+                Arrêter
+              </Button>
             </motion.div>
           )}
         </AnimatePresence>
