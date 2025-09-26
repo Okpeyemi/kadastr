@@ -24,6 +24,14 @@ function isUncertain(text: string | undefined): boolean {
   return short || doubtful
 }
 
+function classifyStatus(text: string): "ok" | "warn" | "error" {
+  const t = (text || "").toLowerCase()
+  if (/(litige|inondable|restriction|dpl|dpm|inconstructible|non conforme|danger|interdit|majeur)/.test(t)) return "error"
+  if (/(chevauchement|proximité|attention|alerte|risque|conflit)/.test(t)) return "warn"
+  if (/(aucun conflit|aucune alerte|conforme|pas de conflit|aucun chevauchement)/.test(t)) return "ok"
+  return "warn"
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -41,7 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Paramètre 'question' manquant." }, { status: 400 })
     }
 
-    // 1) Première tentative sans web (on respecte le contexte fourni)
+    // 1) Réponse primaire
     let mergedContext = Array.isArray(context) ? context : []
     const primary = await generateAnswer(
       question,
@@ -49,8 +57,10 @@ export async function POST(req: NextRequest) {
       Array.isArray(history) ? history : []
     )
 
-    // 2) Si l’utilisateur force le web OU si la réponse semble incertaine → recherche web, second essai
+    // 2) Option web si nécessaire
     let usedWeb = false
+    let secondary: string | undefined
+    let finalText = primary
     if (useWeb || isUncertain(primary)) {
       try {
         const web = await searchWeb(question, 5)
@@ -60,21 +70,39 @@ export async function POST(req: NextRequest) {
             metadata: { titre: w.title, url: w.url, source: "web" as const },
           }))
           mergedContext = [...webCtx, ...mergedContext]
-          const secondary = await generateAnswer(
+          secondary = await generateAnswer(
             question,
             mergedContext,
             Array.isArray(history) ? history : []
           )
-          // Si la seconde réponse est valable, on la renvoie; sinon, on garde la première
           if (secondary && secondary.trim().length > 0 && !isUncertain(secondary)) {
             usedWeb = true
-            return NextResponse.json({ ok: true, text: secondary, usedWeb })
+            finalText = secondary
           }
         }
-      } catch { /* ignore fallback errors */ }
+      } catch { /* ignore */ }
     }
 
-    return NextResponse.json({ ok: true, text: primary, usedWeb })
+    // 3) Classification par Gemini (unique token)
+    const statusPrompt = [
+      "Lis le résumé ci-dessous et classe la situation en un seul mot parmi: ok, warn, error.",
+      "- ok: aucun conflit/alerte, conforme.",
+      "- warn: chevauchement mineur, proximité, alerte ou risque non bloquant.",
+      "- error: litige, zone inondable, restriction, DPL/DPM, inconstructible, non conforme, danger, interdiction, conflit majeur.",
+      "Réponds uniquement par: ok, warn ou error."
+    ].join(" ")
+    const statusRaw = await generateAnswer(
+      statusPrompt,
+      [{ content: finalText, metadata: { source: "summary" } }],
+      []
+    )
+    let status = String(statusRaw || "").trim().toLowerCase()
+    if (status.includes("error")) status = "error"
+    else if (status.includes("warn") || status.includes("warning") || status === "attention") status = "warn"
+    else if (status.includes("ok") || status.includes("conforme")) status = "ok"
+    else status = "warn"
+
+    return NextResponse.json({ ok: true, text: finalText, usedWeb, status })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Erreur serveur."
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
