@@ -7,17 +7,66 @@ import { useRouter } from "next/navigation";
 import { RefreshCw, Download, EyeClosed, Eye } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Image from "next/image";
+import Lottie from "lottie-react";
+import runningAnim from "../../public/running.json";
+import { Progress } from "@/components/ui/progress";
+
+// Loader centré avec progression (15s par défaut)
+export function ResultLoader({
+  className,
+  durationMs = 15000,
+}: {
+  className?: string;
+  durationMs?: number;
+}) {
+  const [value, setValue] = React.useState(0);
+
+  React.useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min((now - start) / durationMs, 1);
+      setValue(Math.round(p * 100));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [durationMs]);
+
+  return (
+    <div className={className} aria-busy={value < 100} aria-live="polite">
+      <div className="mb-2 text-center">
+        <div className="text-foreground font-medium">Traitement en cours…</div>
+        <div className="text-muted-foreground text-sm">
+          Merci de patienter pendant la préparation de votre dossier.
+        </div>
+      </div>
+      <div className="flex w-full justify-center">
+        <Lottie animationData={runningAnim} loop={true} style={{ width: 400, height: 400 }} />
+      </div>
+      <Progress value={value} />
+      <div className="text-muted-foreground mt-2 text-xs text-center">
+        {value}% terminé
+      </div>
+    </div>
+  );
+}
 
 type ResultatProps = {
   className?: string;
   imageUrl?: string;
   resultText?: string;
+  // Nouveaux props pour le loader
+  loader?: React.ReactNode;
+  loaderDurationMs?: number; // défaut 15000
 };
 
 export function Resultat({
   className,
   imageUrl = "/placeholder.svg",
   resultText = "Votre résultat sera affiché ici.",
+  loader,
+  loaderDurationMs = 15000,
 }: ResultatProps) {
   const router = useRouter();
   const [open, setOpen] = React.useState(true);
@@ -26,6 +75,17 @@ export function Resultat({
   const [leveName, setLeveName] = React.useState<string | null>(null);
   const [imgSrc, setImgSrc] = React.useState<string>(imageUrl);
   const [analysisHtml, setAnalysisHtml] = React.useState<string | null>(null);
+
+  // Affichage du loader centré: se ferme uniquement quand data prête (pas de timeout)
+  const [showLoader, setShowLoader] = React.useState(true);
+
+  // Fermer dès qu’on reçoit des données utiles
+  React.useEffect(() => {
+    if (!showLoader) return
+    if (analysisHtml || leveName) {
+      setShowLoader(false)
+    }
+  }, [analysisHtml, leveName, showLoader])
 
   React.useEffect(() => {
     const onMsg = (e: MessageEvent<any>) => {
@@ -43,6 +103,13 @@ export function Resultat({
 
   return (
     <div className={cn("relative w-full h-full", className)}>
+      {/* Overlay loader centré */}
+      {showLoader && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          {loader ?? <ResultLoader className="w-full max-w-md p-4" durationMs={loaderDurationMs} />}
+        </div>
+      )}
+
       {/* Carte plein écran */}
       <iframe
         title="Carte interactive"
@@ -75,7 +142,7 @@ export function Resultat({
         )}
       </Button>
 
-      {/* Panneau résultat (style proche de la photo) */}
+      {/* Panneau résultat */}
       {open && (
         <div className="absolute px-2 pt-14 pb-6 right-0 z-10 max-w-[360px] h-full flex flex-col justify-between gap-4">
           <Card className="bg-white/90 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200">
@@ -93,7 +160,7 @@ export function Resultat({
               <div className="flex flex-col gap-3 items-center">
                 <div className="rounded-lg border max-sm:hidden border-slate-200 overflow-hidden shrink-0 bg-white shadow-sm">
                   <Image
-                    src={imgSrc}
+                    src={`/uploads/${imgSrc}`}
                     alt="Image de la levée"
                     width={220}
                     height={220}
@@ -108,7 +175,6 @@ export function Resultat({
                   {analysisHtml ? (
                     <div
                       className="text-sm leading-relaxed text-slate-700 space-y-1"
-                      // contenu de confiance: même origine (map.html)
                       dangerouslySetInnerHTML={{ __html: analysisHtml }}
                     />
                   ) : (
@@ -118,23 +184,23 @@ export function Resultat({
                   )}
                 </div>
                 <div className="flex justify-end items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => router.push("/demande")}
-                  className="cursor-pointer"
-                >
-                  <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
-                </Button>
-                <Button
-                  type="button"
-                  variant="success"
-                  onClick={() => router.push("/resultat?download=true")}
-                  className="cursor-pointer"
-                >
-                  <Download className="h-4 w-4" aria-hidden /> Télécharger
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => router.push("/demande")}
+                    className="cursor-pointer"
+                  >
+                    <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="success"
+                    onClick={() => router.push("/resultat?download=true")}
+                    className="cursor-pointer"
+                  >
+                    <Download className="h-4 w-4" aria-hidden /> Télécharger
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

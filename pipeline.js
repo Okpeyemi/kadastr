@@ -86,7 +86,7 @@ function saveCache(filePath, payload) {
 async function loadGeoJSONLayers() {
   const layers = {};
   for (const fname of GEOJSON_FILES) {
-    const filePath = path.join(CURRENT, 'data', 'couche', fname);
+    const filePath = path.join(CURRENT, 'public', 'geojson', fname);
     if (!fs.existsSync(filePath)) {
       console.warn(`GeoJSON not found: ${filePath} -> layer will be empty`);
       layers[fname] = null;
@@ -314,8 +314,7 @@ async function processImagesAndCreateCSV() {
     layerIndexes[file] = new LayerIndex(layers[file]);
   }
 
-  let imageDir = path.join(CURRENT, 'data', 'Test');
-  if (!fs.existsSync(imageDir)) imageDir = path.join(CURRENT, 'data', 'Training Data');
+  let imageDir = path.join(CURRENT, 'public', 'uploads');
 
   const imageFiles = fs.readdirSync(imageDir).filter(f => ['.jpg','.jpeg','.png','.tif'].includes(path.extname(f).toLowerCase()));
 
@@ -357,7 +356,7 @@ async function processImagesAndCreateCSV() {
   const header = ['Nom_du_levé', 'Coordonnées', ...GEOJSON_FILES.map(f => path.basename(f, '.geojson'))];
   const csv = Papa.unparse(csvRows, { header: true, columns: header, delimiter: ';' });
 
-  const outPath = path.join(CURRENT, 'results.csv');
+  const outPath = path.join(CURRENT, 'public', 'submission.csv');
   fs.writeFileSync(outPath, csv, { encoding: 'utf8' });
   console.log(`Results saved to ${outPath} (${csvRows.length} rows)`);
   console.log(`Processing completed in ${(Date.now() - startTime)/1000}s`);

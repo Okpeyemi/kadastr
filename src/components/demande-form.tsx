@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Upload } from "lucide-react"
 import { RefreshCw, Trash2 } from "lucide-react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Image from "next/image"
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024 // 10MB
@@ -16,6 +16,7 @@ export function DemandeForm({
   ...props
 }: React.ComponentProps<"form">) {
   const pathname = usePathname()
+  const router = useRouter()
   const [file, setFile] = React.useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -120,8 +121,16 @@ export function DemandeForm({
         return
       }
       setUploadedUrl(json.url as string)
-      // Option: rediriger vers une page de traitement
-      // router.push("/traitement")
+
+      // Déclenche le traitement géospatial (pipeline.js lit public/uploads)
+      try {
+        await fetch("/api/pipeline", { method: "POST", cache: "no-store" })
+      } catch {
+        // silencieux: l’UI reste fonctionnelle même si le pipeline ne démarre pas
+      }
+
+      // Redirige vers la page de résultat
+      router.push("/resultat")
     } catch (err) {
       setError("Erreur réseau, réessayez.")
     } finally {

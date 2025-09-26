@@ -1,3 +1,5 @@
+export const runtime = "nodejs"
+
 import { NextRequest, NextResponse } from "next/server"
 import { mkdir, writeFile } from "fs/promises"
 import path from "path"
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest) {
     await writeFile(filepath, Buffer.from(bytes))
     const url = `/uploads/${filename}`
 
-    // Déclenchement du traitement
+    // Déclenchement du traitement (existant)
     const origin = req.nextUrl.origin
     let analysis: any = null
     try {
@@ -39,7 +41,19 @@ export async function POST(req: NextRequest) {
       analysis = await proc.json().catch(() => null)
     } catch { /* ignore */ }
 
-    return NextResponse.json({ ok: true, url, analysis })
+    // NEW: démarrer la pipeline géospatiale en arrière-plan + logs
+    let pipeline: any = null
+    try {
+      const pRes = await fetch(`${origin}/api/pipeline`, { method: "POST", cache: "no-store" })
+      const pJson = await pRes.json().catch(() => ({}))
+      pipeline = { status: pRes.status, ...pJson }
+      console.log("Pipeline start:", pipeline)
+    } catch (e) {
+      console.error("Pipeline start error:", e)
+      pipeline = { ok: false, error: "fetch_failed" }
+    }
+
+    return NextResponse.json({ ok: true, url, analysis, pipeline })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Erreur serveur." }, { status: 500 })
   }

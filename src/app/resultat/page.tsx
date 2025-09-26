@@ -1,6 +1,6 @@
 "use client";
 
-import { Resultat } from "@/components/resultat";
+import { Resultat, ResultLoader } from "@/components/resultat";
 import { BrandLink } from "@/components/brand-link";
 import { FileAxis3D } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,71 +36,22 @@ export default function ResultatPage() {
       <div className="flex flex-col gap-4 p-4 md:p-6">
         <div className="flex justify-between w-full gap-2">
           <BrandLink href="#" label="Kadastr." />
-            <div className="flex items-center gap-3">
-            <span
-              className="text-xs font-black text-muted-foreground"
-              style={{
-                animation: remaining <= 5 ? "pulseColor 0.9s ease-in-out infinite" : "pulseGlow 1.6s ease-in-out infinite",
-                color: remaining <= 5 ? (remaining % 2 === 0 ? "#059669" : "#ef4444") : undefined,
-                textShadow: remaining <= 5
-                  ? (remaining % 2 === 0
-                    ? "0 0 8px rgba(16,185,129,0.95), 0 0 18px rgba(16,185,129,0.6)"
-                    : "0 0 8px rgba(239,68,68,0.95), 0 0 18px rgba(239,68,68,0.6)")
-                  : "0 0 8px rgba(99,102,241,0.95), 0 0 18px rgba(99,102,241,0.6)",
-              }}
-            >
-              {(() => {
-                const minutes = Math.floor(remaining / 60);
-                const seconds = remaining % 60;
-                return minutes > 0
-                  ? `Redirection sur "Mes Demandes" dans ${minutes} minute${minutes > 1 ? "s" : ""} ${seconds}s…`
-                  : `Redirection sur "Mes Demandes" dans ${seconds}s…`;
-              })()}
-            </span>
-            <style jsx>{`
-              @keyframes pulseGlow {
-              0% {
-                text-shadow: 0 0 4px rgba(99,102,241,0.6), 0 0 8px rgba(99,102,241,0.35);
-              }
-              50% {
-                text-shadow: 0 0 12px rgba(99,102,241,0.95), 0 0 22px rgba(99,102,241,0.6);
-              }
-              100% {
-                text-shadow: 0 0 4px rgba(99,102,241,0.6), 0 0 8px rgba(99,102,241,0.35);
-              }
-              }
-
-              /* Used during the last 5 seconds. The actual green/red choice is controlled
-               by the inline style that switches every second; this animation just pulses intensity. */
-              @keyframes pulseColor {
-              0% {
-                text-shadow: 0 0 4px rgba(0,0,0,0.2);
-                transform: scale(1);
-              }
-              50% {
-                text-shadow: 0 0 14px rgba(0,0,0,0.4);
-                transform: scale(1.02);
-              }
-              100% {
-                text-shadow: 0 0 4px rgba(0,0,0,0.2);
-                transform: scale(1);
-              }
-              }
-            `}</style>
-            </div>
-            <Button
-              type="button"
-              onClick={() => router.push("/demandes")}
-              className="cursor-pointer"
-            >
-              <FileAxis3D className="h-4 w-4" aria-hidden /> Voir Mes Demandes
-            </Button>
+          <Button
+            type="button"
+            onClick={() => router.push("/demandes")}
+            className="cursor-pointer"
+          >
+            <FileAxis3D className="h-4 w-4" aria-hidden /> Voir Mes Demandes
+          </Button>
         </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full h-full">
             <Resultat
               imageUrl="/leve4.jpeg"
               resultText="Exemple de texte de résultat. Vous pouvez remplacer ce contenu par le message retourné par votre traitement."
+              // Afficher le loader centré pendant 15s
+              loader={<ResultLoader className="w-full max-w-md p-4" durationMs={15000} />}
+              loaderDurationMs={20000}
             />
           </div>
         </div>
