@@ -40,6 +40,13 @@ export async function POST(req: NextRequest) {
 
     if (process.env.VERCEL) {
       // Prod: Vercel Blob (persistant)
+      const token = process.env.BLOB_READ_WRITE_TOKEN
+      if (!token) {
+        return NextResponse.json(
+          { ok: false, error: "BLOB_READ_WRITE_TOKEN manquant sur Vercel. Active Blob Storage et redeploie." },
+          { status: 500 }
+        )
+      }
       const base = path
         .basename(file.name, path.extname(file.name))
         .replace(/[^a-z0-9_-]/gi, "_")
@@ -50,6 +57,7 @@ export async function POST(req: NextRequest) {
       const res = await put(filename, file.stream(), {
         access: "public",
         contentType: file.type || "application/octet-stream",
+        token, // <- important
       })
       url = res.url
     } else {
