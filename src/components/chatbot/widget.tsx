@@ -325,7 +325,11 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
     const seconds = date.getSeconds().toString().padStart(2, '0')
     return `${hours}:${minutes}:${seconds}`
   }
-  
+
+  // NEW: render timestamp only after mount to avoid SSR/client mismatch
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
+
   const mdComponents: Components = {
     code: ({ className, children, ...props }) => {
       const isJson = /\b(json|json5)\b/.test(String(className || ""))
@@ -386,8 +390,8 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
       {/* Avatar */}
       <div>
         <div className={cn("shrink-0 mt-1 rounded-full grid place-items-center", isUser ? "bg-primary/10" : "bg-muted")}>
-        {isUser ? <User className="h-5 w-5 text-primary p-1" /> : <Bot className="h-5 w-5 text-muted-foreground p-1" />}
-      </div>
+          {isUser ? <User className="h-5 w-5 text-primary p-1" /> : <Bot className="h-5 w-5 text-muted-foreground p-1" />}
+        </div>
       </div>
 
       {/* Bubble */}
@@ -400,7 +404,6 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
             {message.content}
           </div>
         ) : (
-          // >>> Rendu Markdown pour l'assistant
           <div className="whitespace-pre-wrap break-words">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
@@ -415,9 +418,15 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
             <AudioPlayer src={message.audioFile} onRemove={onRemoveAudio ? () => onRemoveAudio(message.id) : undefined} />
           </div>
         )}
-        <div className={cn("mt-1 text-[10px]", isUser ? "text-primary-foreground/70 text-right" : "text-muted-foreground/70")}>
-          {formatTime(message.timestamp)}
-        </div>
+
+        {/* Timestamp: only after mount; keep placeholder to avoid layout shift */}
+        {mounted ? (
+          <div className={cn("mt-1 text-[10px]", isUser ? "text-primary-foreground/70 text-right" : "text-muted-foreground/70")}>
+            {formatTime(message.timestamp)}
+          </div>
+        ) : (
+          <div className={cn("mt-1 text-[10px] invisible", isUser ? "text-primary-foreground/70 text-right" : "text-muted-foreground/70")} aria-hidden />
+        )}
       </div>
     </motion.div>
   )
@@ -771,7 +780,7 @@ export function AudioChatbotWidget({
                <AudioPlayer src={URL.createObjectURL(audioBlob)} onRemove={clearRecording} />
              </motion.div>
            )}
-</AnimatePresence>
+        </AnimatePresence>
 
 {/* Bandeau de statut pendant l’envoi/transcription */}
 <AnimatePresence>
