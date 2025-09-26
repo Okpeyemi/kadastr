@@ -5,9 +5,12 @@ import { mkdir, writeFile } from "fs/promises"
 export async function POST(req: NextRequest) {
   try {
     const { url } = await req.json()
-    console.log("ok")
     if (!url || typeof url !== "string") {
       return NextResponse.json({ ok: false, error: "Paramètre 'url' manquant." }, { status: 400 })
+    }
+
+    if (!process.env.OPENROUTER_API_KEY) {
+      return NextResponse.json({ ok: false, error: "OPENROUTER_API_KEY manquant en production." }, { status: 500 })
     }
 
     const absUrl = new URL(url, req.nextUrl.origin).href
@@ -41,8 +44,11 @@ export async function POST(req: NextRequest) {
     })
 
     if (!resp.ok) {
-      const t = await resp.text().catch(() => "")
-      return NextResponse.json({ ok: false, error: `OpenRouter: ${resp.status}`, details: t }, { status: 502 })
+      const body = await resp.text().catch(() => "")
+      return NextResponse.json(
+        { ok: false, error: `OpenRouter: ${resp.status}`, details: body.slice(0, 1000) },
+        { status: 502 }
+      )
     }
     const json = await resp.json()
     const aiText = json?.choices?.[0]?.message?.content || ""
@@ -64,7 +70,6 @@ export async function POST(req: NextRequest) {
         await mkdir(uploadDir, { recursive: true })
         const csvPath = path.join(uploadDir, `${baseName}.csv`)
         await writeFile(csvPath, csvText, "utf8")
-        console.log("ok")
         csvUrl = `/uploads/${baseName}.csv`
       }
     } catch {

@@ -5,17 +5,11 @@ import { mkdir, readFile, unlink, writeFile, stat } from "fs/promises"
 
 export const runtime = "nodejs"
 
-async function isProcessAlive(pid: number) {
-  try {
-    // signal 0 => vérifie juste l’existence
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export async function POST(_req: NextRequest) {
+  if (process.env.VERCEL) {
+    return NextResponse.json({ ok: false, error: "pipeline_disabled_in_prod" }, { status: 501 })
+  }
+
   try {
     const cwd = process.cwd()
     const script = path.join(cwd, "pipeline.js")
