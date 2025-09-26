@@ -5,7 +5,7 @@ import { BrandLink } from "@/components/brand-link";
 import { FileAxis3D } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
 export default function ResultatPage() {
   const router = useRouter();
@@ -35,13 +35,15 @@ export default function ResultatPage() {
         </div>
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full h-full">
-            <Resultat
-              imageUrl="/leve4.jpeg"
-              resultText="Exemple de texte de résultat. Vous pouvez remplacer ce contenu par le message retourné par votre traitement."
-              // Afficher le loader centré pendant 15s
-              loader={<ResultLoader className="w-full max-w-md p-4" durationMs={15000} />}
-              loaderDurationMs={20000}
-            />
+            <Suspense fallback={<ResultLoader className="w-full max-w-md p-4" durationMs={15000} />}>
+              <Resultat
+                imageUrl="/leve4.jpeg"
+                resultText="Exemple de texte de résultat. Vous pouvez remplacer ce contenu par le message retourné par votre traitement."
+                // Afficher le loader centré pendant 15s
+                loader={<ResultLoader className="w-full max-w-md p-4" durationMs={15000} />}
+                loaderDurationMs={20000}
+              />
+            </Suspense>
           </div>
         </div>
       </div>
