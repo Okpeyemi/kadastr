@@ -18,10 +18,11 @@ export async function searchWeb(query: string, maxResults = 5): Promise<WebResul
     if (!resp.ok) return []
     const json = await resp.json()
     const results = Array.isArray(json.results) ? json.results : []
-    return results.map((r: any) => ({
-      title: r.title || "",
-      url: r.url || "",
-      content: r.content || r.snippet || "",
+    type ApiItem = { title?: unknown; url?: unknown; content?: unknown; snippet?: unknown }
+    return (results as ApiItem[]).map((r) => ({
+      title: typeof r.title === "string" ? r.title : "",
+      url: typeof r.url === "string" ? r.url : "",
+      content: typeof r.content === "string" ? r.content : (typeof r.snippet === "string" ? r.snippet : ""),
     }))
   } catch {
     return []

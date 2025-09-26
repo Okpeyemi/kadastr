@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     const text = (await result.response.text())?.trim() || ""
     return NextResponse.json({ text })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: "Transcription échouée" }, { status: 500 })
   }
 }

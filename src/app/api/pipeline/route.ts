@@ -15,7 +15,7 @@ async function isProcessAlive(pid: number) {
   }
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
   try {
     const cwd = process.cwd()
     const script = path.join(cwd, "pipeline.js")
@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ ok: true, pid: child.pid, script })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Erreur serveur" }, { status: 500 })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Erreur serveur"
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

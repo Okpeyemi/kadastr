@@ -88,8 +88,8 @@ export function Resultat({
   }, [analysisHtml, leveName, showLoader])
 
   React.useEffect(() => {
-    const onMsg = (e: MessageEvent<any>) => {
-      const d = e.data || {};
+    const onMsg = (e: MessageEvent<unknown>) => {
+      const d = (e.data ?? {}) as { type?: string; imageUrl?: string; name?: string; html?: string }
       if (d.type === "kadastr:leve:selected") {
         if (typeof d.imageUrl === "string") setImgSrc(d.imageUrl);
         if (typeof d.name === "string") setLeveName(d.name);
@@ -159,13 +159,21 @@ export function Resultat({
             <CardContent>
               <div className="flex flex-col gap-3 items-center">
                 <div className="rounded-lg border max-sm:hidden border-slate-200 overflow-hidden shrink-0 bg-white shadow-sm">
-                  <Image
-                    src={`/uploads/${imgSrc}`}
-                    alt="Image de la levée"
-                    width={220}
-                    height={220}
-                    className="h-[100px] w-[100px] object-cover"
-                  />
+                  {/* Utiliser URL absolue si fournie, sinon /uploads/<name> */}
+                  {(() => {
+                    const normalized = (imgSrc || "").replace(/^\//, "")
+                    const resolved = /^https?:\/\//i.test(imgSrc) ? imgSrc : `/uploads/${normalized}`
+                    return (
+                      <Image
+                        src={resolved}
+                        alt="Image de la levée"
+                        width={220}
+                        height={220}
+                        className="h-[100px] w-[100px] object-cover"
+                        unoptimized={/^https?:\/\//i.test(resolved)}
+                      />
+                    )
+                  })()}
                 </div>
 
                 <div className="w-full rounded-md h-90 border overflow-y-scroll border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100 p-3">

@@ -9,25 +9,14 @@ import { useEffect, useState } from "react";
 
 export default function ResultatPage() {
   const router = useRouter();
-  const [remaining, setRemaining] = useState(30);
 
   useEffect(() => {
     const totalMs = 5 * 60 * 1000; // 5 minutes
-    const totalSeconds = Math.ceil(totalMs / 1000); // 300 seconds
-    // initialize remaining to the full duration (overrides the previous 30s)
-    setRemaining(totalSeconds);
-
     const redirectTimeout = setTimeout(() => {
       router.push("/demandes");
     }, totalMs);
-
-    const interval = setInterval(() => {
-      setRemaining((r) => (r > 0 ? r - 1 : 0));
-    }, 1000);
-
     return () => {
       clearTimeout(redirectTimeout);
-      clearInterval(interval);
     };
   }, [router]);
 

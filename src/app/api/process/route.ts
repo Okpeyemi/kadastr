@@ -48,8 +48,11 @@ export async function POST(req: NextRequest) {
     const aiText = json?.choices?.[0]?.message?.content || ""
 
     // Parse lignes: B1,427094.70,712773.67
-    const matches = Array.from(aiText.matchAll(/(B\d+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/g))
-    const rows = matches.map(m => [m[1], m[2], m[3]])
+    const regex = /(B\d+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/g
+    const rows: string[][] = []
+    for (const m of aiText.matchAll(regex)) {
+      rows.push([m[1] ?? "", m[2] ?? "", m[3] ?? ""])
+    }
     const csvText = ["Parcelle,X,Y", ...rows.map(r => r.join(","))].join("\n")
 
     // Sauvegarde CSV en dev local uniquement
@@ -69,7 +72,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, text: aiText, rows, csvText, csvUrl })
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Erreur serveur." }, { status: 500 })
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Erreur serveur."
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

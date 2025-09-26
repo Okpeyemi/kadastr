@@ -131,7 +131,7 @@ export function DemandeForm({
 
       // Redirige vers la page de résultat
       router.push("/resultat")
-    } catch (err) {
+    } catch {
       setError("Erreur réseau, réessayez.")
     } finally {
       setIsUploading(false)

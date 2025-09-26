@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRef, useState, useTransition } from "react"
+import { useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   X,
@@ -17,10 +17,12 @@ import {
   VolumeX,
   Download,
   Trash2,
-  Globe, // + ajouter l'icône
+  Globe,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
+import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
+import Image from "next/image"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -297,6 +299,57 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
     return `${hours}:${minutes}:${seconds}`
   }
   
+  const mdComponents: Components = {
+    code: ({ className, children, ...props }) => {
+      const isJson = /\b(json|json5)\b/.test(String(className || ""))
+      return (
+        <div className="rounded-md border bg-muted/30">
+          {isJson && (
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border-b border-primary/20">
+              Données structurées (JSON)
+            </div>
+          )}
+          <pre className={cn("p-3 overflow-x-auto text-sm leading-relaxed", isJson ? "text-foreground" : "text-foreground/90")}>
+            <code {...props} className={className as string}>{children}</code>
+          </pre>
+        </div>
+      )
+    },
+    p: (props) => <p className="leading-relaxed my-2" {...props} />,
+    blockquote: (props) => (
+      <blockquote className="my-3 border-l-2 border-muted-foreground/30 pl-3 italic text-foreground/80 bg-muted/30 rounded-sm" {...props} />
+    ),
+    ul: (props) => <ul className="list-disc list-inside my-2 space-y-1" {...props} />,
+    ol: (props) => <ol className="list-decimal list-inside my-2 space-y-1" {...props} />,
+    li: (props) => <li {...props} />,
+    h1: (props) => <h1 className="text-2xl font-bold mt-4 mb-2" {...props} />,
+    h2: (props) => <h2 className="text-xl font-bold mt-3 mb-2" {...props} />,
+    h3: (props) => <h3 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+    table: (props) => (
+      <div className="overflow-x-auto my-3">
+        <table className="w-full text-sm border" {...props} />
+      </div>
+    ),
+    thead: (props) => <thead className="bg-muted/50" {...props} />,
+    th: (props) => <th className="text-left px-2 py-1 border-b" {...props} />,
+    td: (props) => <td className="px-2 py-1 border-b" {...props} />,
+    img: ({ src, alt }) => {
+      const s = typeof src === "string" ? src : ""
+      const a = typeof alt === "string" ? alt : ""
+      const external = /^https?:\/\//i.test(s)
+      return (
+        <Image
+          src={s}
+          alt={a || ""}
+          width={800}
+          height={600}
+          unoptimized={external}
+          className="my-2 max-w-full h-auto rounded"
+        />
+      )
+    },
+  }
+
   return (
     <motion.div
       className={cn("flex gap-3 max-w-[80%]", isUser ? "ml-auto flex-row-reverse" : "mr-auto")}
@@ -324,44 +377,7 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
           <div className="whitespace-pre-wrap break-words">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noreferrer" className="underline text-primary hover:opacity-80" />,
-                code: ({ inline, className, children, ...props }: any) => {
-                  if (inline) {
-                    return <code className="px-1 py-[2px] rounded bg-muted text-foreground/90" {...props}>{children}</code>
-                  }
-                  const lang = (className || '').match(/language-(\w+)/)?.[1]
-                  const isJson = lang === 'json'
-                  return (
-                    <div className={cn("overflow-hidden rounded-md border", isJson ? "border-primary/30 bg-primary/5" : "bg-muted")}>
-                      {isJson && (
-                        <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border-b border-primary/20">
-                          Données structurées (JSON)
-                        </div>
-                      )}
-                      <pre className={cn("p-3 overflow-x-auto text-sm leading-relaxed", isJson ? "text-foreground" : "text-foreground/90")}>
-                        <code {...props} className={className}>{children}</code>
-                      </pre>
-                    </div>
-                  )
-                },
-                p: ({ node, ...props }: any) => <p className="leading-relaxed my-2" {...props} />,
-                blockquote: ({ node, ...props }: any) => (
-                  <blockquote className="my-3 border-l-2 border-muted-foreground/30 pl-3 italic text-foreground/80 bg-muted/30 rounded-sm" {...props} />
-                ),
-                hr: () => <hr className="my-4 border-t border-muted" />,
-                ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 space-y-1" {...props} />,
-                ol: ({ node, ...props }: any) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
-                li: ({ node, ...props }: any) => <li className="leading-relaxed" {...props} />,
-                img: ({ node, ...props }: any) => <img className="rounded-md shadow-sm max-w-full" {...props} />,
-                h1: ({ node, ...props }: any) => <h1 className="mt-2 mb-2 text-xl font-bold" {...props} />,
-                h2: ({ node, ...props }: any) => <h2 className="mt-2 mb-1 font-semibold text-base" {...props} />,
-                h3: ({ node, ...props }: any) => <h3 className="mt-2 mb-1 font-semibold" {...props} />,
-                h4: ({ node, ...props }: any) => <h4 className="mt-2 mb-1 font-semibold text-sm" {...props} />,
-                table: ({ node, ...props }: any) => <div className="overflow-x-auto"><table className="border-collapse text-xs" {...props} /></div>,
-                th: ({ node, ...props }: any) => <th className="border px-2 py-1 bg-muted/50" {...props} />,
-                td: ({ node, ...props }: any) => <td className="border px-2 py-1" {...props} />,
-              }}
+              components={mdComponents}
             >
               {message.content}
             </ReactMarkdown>
@@ -435,8 +451,6 @@ export function AudioChatbotWidget({
   const [useWeb, setUseWeb] = useState<boolean>(() => {
     try { return localStorage.getItem("chat:useWeb") !== "0" } catch { return true }
   })
-  // const [isPending, startTransition] = useTransition()
-  const [, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isRecording, audioBlob, startRecording, stopRecording, clearRecording, level, elapsedSeconds } = useVoiceRecorder()
 
