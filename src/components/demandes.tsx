@@ -26,7 +26,6 @@ export type DemandeItem = {
   title: string;
   imageUrl: string;
   mapHref?: string;
-  tfNumber?: string;
   downloadUrl?: string;
   coords?: DemandeCoord[];
 };
@@ -101,22 +100,24 @@ export function Demandes({
             <Card key={item.id} className="flex flex-col">
               <CardHeader>
                 <CardTitle className="text-base">{item.title}</CardTitle>
-                <div className="text-xs text-muted-foreground">
-                  Numéro TF:{" "}
-                  <span className="font-medium text-foreground">
-                    {item.tfNumber ?? "—"}
-                  </span>
-                </div>
               </CardHeader>
               <CardContent>
                 <div className="rounded-lg border overflow-hidden">
-                  <Image
-                    src={item.imageUrl}
-                    alt={item.title}
-                    width={320}
-                    height={200}
-                    className="h-48 w-full object-cover"
-                  />
+                  {(() => {
+                    const src = item.imageUrl || ""
+                    const normalized = src.replace(/^\//, "")
+                    const resolved = /^https?:\/\//i.test(src) ? src : `/uploads/${normalized}`
+                    return (
+                      <Image
+                        src={resolved}
+                        alt={item.title}
+                        width={320}
+                        height={200}
+                        className="h-48 w-full object-cover"
+                        unoptimized={/^https?:\/\//i.test(resolved)}
+                      />
+                    )
+                  })()}
                 </div>
                 <div className="mt-3 rounded-md border bg-muted/30 p-3">
                   <div className="text-xs font-medium mb-1">Coordonnées</div>
@@ -145,15 +146,6 @@ export function Demandes({
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
-                  onClick={() => router.push("/demande")}
-                  className="cursor-pointer"
-                >
-                  <RefreshCw className="h-4 w-4" aria-hidden /> Reprendre
-                  l’analyse
-                </Button>
-                <Button
-                  type="button"
                   variant="success"
                   onClick={() =>
                     handleDownload(
@@ -172,26 +164,26 @@ export function Demandes({
             <Card key={item.id} className="p-4">
               <div className="flex items-center gap-4">
                 <div className="rounded-md border overflow-hidden shrink-0">
-                  <Image
-                    src={item.imageUrl}
-                    alt={item.title}
-                    width={320}
-                    height={200}
-                    className="h-full w-24 object-cover"
-                  />
+                  {(() => {
+                    const src = item.imageUrl || ""
+                    const normalized = src.replace(/^\//, "")
+                    const resolved = /^https?:\/\//i.test(src) ? src : `/uploads/${normalized}`
+                    return (
+                      <Image
+                        src={resolved}
+                        alt={item.title}
+                        width={320}
+                        height={200}
+                        className="h-full w-24 object-cover"
+                        unoptimized={/^https?:\/\//i.test(resolved)}
+                      />
+                    )
+                  })()}
                 </div>
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="font-medium line-clamp-1">{item.title}</div>
-                  <div className="text-xs text-muted-foreground line-clamp-1">
-                    Numéro TF:{" "}
-                    <span className="font-medium text-foreground">
-                      {item.tfNumber ?? "—"}
-                    </span>
-                  </div>
                   <div className="rounded-md border bg-muted/30 p-2">
-                    <div className="text-[11px] font-medium mb-1">
-                      Coordonnées
-                    </div>
+                    <div className="text-[11px] font-medium mb-1">Coordonnées</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono text-muted-foreground">
                       {item.coords?.length ? (
                         item.coords.map((c) => (

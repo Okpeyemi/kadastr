@@ -17,54 +17,73 @@ export default function Page() {
   const [page, setPage] = React.useState(1)
   const pageSize = 6
 
-  // Source des demandes (inchangée, simplement extraite pour pagination)
-  const items = React.useMemo(() => ([
-    {
-      id: 1,
-      title: "Demande #1",
-      imageUrl: "/leve4.jpeg",
-      mapHref: "/resultat?view=map",
-      tfNumber: "TF123",
-      coords: [
-        { name: "B1", x: 429728.0, y: 725718.0 },
-        { name: "B2", x: 429751.8, y: 725700.71 },
-        { name: "B3", x: 429729.95, y: 725668.94 },
-        { name: "B4", x: 429676.88, y: 725562.08 },
-        { name: "B5", x: 429643.33, y: 725574.63 },
-        { name: "B6", x: 429684.85, y: 725686.03 },
-      ],
-    },
-    {
-      id: 2,
-      title: "Demande #2",
-      imageUrl: "/placeholder.svg",
-      mapHref: "/resultat?view=map",
-      tfNumber: "TF123",
-      coords: [
-        { name: "B1", x: 429728.0, y: 725718.0 },
-        { name: "B2", x: 429751.8, y: 725700.71 },
-        { name: "B3", x: 429729.95, y: 725668.94 },
-        { name: "B4", x: 429676.88, y: 725562.08 },
-        { name: "B5", x: 429643.33, y: 725574.63 },
-        { name: "B6", x: 429684.85, y: 725686.03 },
-      ],
-    },
-    {
-      id: 3,
-      title: "Demande #3",
-      imageUrl: "/placeholder.svg",
-      mapHref: "/resultat?view=map",
-      tfNumber: "TF123",
-      coords: [
-        { name: "B1", x: 429728.0, y: 725718.0 },
-        { name: "B2", x: 429751.8, y: 725700.71 },
-        { name: "B3", x: 429729.95, y: 725668.94 },
-        { name: "B4", x: 429676.88, y: 725562.08 },
-        { name: "B5", x: 429643.33, y: 725574.63 },
-        { name: "B6", x: 429684.85, y: 725686.03 },
-      ],
-    },
-  ] satisfies DemandeItem[]), [])
+  // Charger les demandes depuis public/submission.csv
+  const [items, setItems] = React.useState<DemandeItem[]>([])
+
+  React.useEffect(() => {
+    function splitCsvLine(line: string): string[] {
+      const out: string[] = []
+      let cur = ""
+      let inQuotes = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { cur += '"'; i++ }
+          else { inQuotes = !inQuotes }
+        } else if (ch === ';' && !inQuotes) { out.push(cur); cur = "" }
+        else { cur += ch }
+      }
+      out.push(cur)
+      return out
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/submission.csv", { cache: "no-store" })
+        if (!res.ok) return
+        const text = await res.text()
+        const lines = (text || "").split(/\r?\n/).filter(l => l.trim().length)
+        if (!lines.length) return
+        const header = splitCsvLine(lines[0]).map(s => s.trim())
+        const nameIdx = header.indexOf("Nom_du_levé")
+        const coordsIdx = header.indexOf("Coordonnées")
+        if (nameIdx < 0 || coordsIdx < 0) return
+
+        const rows: DemandeItem[] = []
+        for (let li = 1; li < lines.length; li++) {
+          const parts = splitCsvLine(lines[li])
+          const name = (parts[nameIdx] || "").trim()
+          let coordStr = (parts[coordsIdx] || "").trim()
+          if (!name || !coordStr) continue
+          if (coordStr[0] === '"' && coordStr[coordStr.length - 1] === '"') coordStr = coordStr.slice(1, -1)
+          coordStr = coordStr.replace(/""/g, '"')
+
+          let coordsArr: Array<{ x: number; y: number }> = []
+          try { coordsArr = JSON.parse(coordStr) } catch { coordsArr = [] }
+
+          const coords = coordsArr.map((c, i) => ({
+            name: `B${i + 1}`,
+            x: Number(c.x),
+            y: Number(c.y),
+          })).filter(c => Number.isFinite(c.x) && Number.isFinite(c.y))
+
+          rows.push({
+            id: li,
+            title: name,
+            imageUrl: `/${name}`,
+            mapHref: `/resultat?view=map&leve=${encodeURIComponent(name)}`,
+            downloadUrl: `/${name}`,
+            coords,
+          })
+        }
+        setItems(rows)
+      } catch {
+        // ignore
+      }
+    }
+
+    load()
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
   const pagedItems = React.useMemo(
