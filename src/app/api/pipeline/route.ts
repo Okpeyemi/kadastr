@@ -5,6 +5,19 @@ import { mkdir, readFile, unlink, writeFile, stat } from "fs/promises"
 
 export const runtime = "nodejs"
 
+// Helper: vérifie si un PID est vivant (cross-platform)
+async function isProcessAlive(pid: number): Promise<boolean> {
+  if (!pid || !Number.isFinite(pid)) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (e: any) {
+    const code = e && (e.code || e.errno)
+    if (code === "EPERM") return true // existe mais pas les permissions
+    return false // ESRCH: n'existe pas
+  }
+}
+
 export async function POST(_req: NextRequest) {
   if (process.env.VERCEL) {
     return NextResponse.json({ ok: false, error: "pipeline_disabled_in_prod" }, { status: 501 })
@@ -26,14 +39,12 @@ export async function POST(_req: NextRequest) {
         if (j?.pid && (await isProcessAlive(Number(j.pid)))) {
           return NextResponse.json({ ok: true, alreadyRunning: true, pid: j.pid, startedAt: j.startedAt })
         }
-        // ancien lock mort → cleanup
         await unlink(lockPath).catch(() => {})
       }
     } catch {
       // ignore
     }
 
-    // Vérifie que le fichier existe (optionnel)
     await stat(script)
 
     const child = spawn(process.execPath, [script], {
@@ -43,15 +54,12 @@ export async function POST(_req: NextRequest) {
       detached: false,
     })
 
-    // log dans la console serveur pour debug
     child.stdout?.on("data", (d) => console.log(`[pipeline] ${String(d).trimEnd()}`))
     child.stderr?.on("data", (d) => console.error(`[pipeline] ${String(d).trimEnd()}`))
 
-    // écrit le lock
     const payload = { pid: child.pid, startedAt: Date.now() }
     await writeFile(lockPath, JSON.stringify(payload), "utf8")
 
-    // enlève le lock à la fin
     child.on("close", async () => {
       try { await unlink(lockPath) } catch {}
       console.log(`[pipeline] process ${child.pid} terminé`)
