@@ -11,8 +11,12 @@ async function isProcessAlive(pid: number): Promise<boolean> {
   try {
     process.kill(pid, 0)
     return true
-  } catch (e: any) {
-    const code = e && (e.code || e.errno)
+  } catch (e: unknown) {
+    const code =
+      typeof e === "object" && e !== null
+        ? ((e as { code?: string | number; errno?: string | number }).code ??
+           (e as { code?: string | number; errno?: string | number }).errno)
+        : undefined
     if (code === "EPERM") return true // existe mais pas les permissions
     return false // ESRCH: n'existe pas
   }
