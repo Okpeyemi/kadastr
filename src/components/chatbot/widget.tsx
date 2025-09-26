@@ -312,7 +312,7 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
 
       {/* Bubble */}
       <div className={cn(
-        "rounded-2xl px-3 py-2 text-sm shadow-sm border",
+        "rounded-2xl px-3 py-2 text-sm shadow-sm border w-full",
         isUser ? "bg-primary text-primary-foreground border-primary/20" : "bg-background border-border"
       )}>
         {isUser ? (
@@ -325,21 +325,43 @@ function ChatMessage({ message, onRemoveAudio }: { message: Message; onRemoveAud
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                  a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noreferrer" className="underline" />,
-                  code: ({ inline, className, children, ...props }: any) =>
-                    inline ? (
-                      <code className="px-1 py-[2px] rounded bg-muted text-foreground/90" {...props}>{children}</code>
-                    ) : (
-                      <pre className="p-3 rounded-md bg-muted overflow-x-auto"><code {...props}>{children}</code></pre>
-                    ),
-                  ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 space-y-1" {...props} />,
-                  ol: ({ node, ...props }: any) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
-                  h2: ({ node, ...props }: any) => <h2 className="mt-2 mb-1 font-semibold text-base" {...props} />,
-                  h3: ({ node, ...props }: any) => <h3 className="mt-2 mb-1 font-semibold" {...props} />,
-                  table: ({ node, ...props }: any) => <div className="overflow-x-auto"><table className="border-collapse text-xs" {...props} /></div>,
-                  th: ({ node, ...props }: any) => <th className="border px-2 py-1 bg-muted/50" {...props} />,
-                  td: ({ node, ...props }: any) => <td className="border px-2 py-1" {...props} />,
-                }}
+                a: ({ node, ...props }: any) => <a {...props} target="_blank" rel="noreferrer" className="underline text-primary hover:opacity-80" />,
+                code: ({ inline, className, children, ...props }: any) => {
+                  if (inline) {
+                    return <code className="px-1 py-[2px] rounded bg-muted text-foreground/90" {...props}>{children}</code>
+                  }
+                  const lang = (className || '').match(/language-(\w+)/)?.[1]
+                  const isJson = lang === 'json'
+                  return (
+                    <div className={cn("overflow-hidden rounded-md border", isJson ? "border-primary/30 bg-primary/5" : "bg-muted")}>
+                      {isJson && (
+                        <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border-b border-primary/20">
+                          Données structurées (JSON)
+                        </div>
+                      )}
+                      <pre className={cn("p-3 overflow-x-auto text-sm leading-relaxed", isJson ? "text-foreground" : "text-foreground/90")}>
+                        <code {...props} className={className}>{children}</code>
+                      </pre>
+                    </div>
+                  )
+                },
+                p: ({ node, ...props }: any) => <p className="leading-relaxed my-2" {...props} />,
+                blockquote: ({ node, ...props }: any) => (
+                  <blockquote className="my-3 border-l-2 border-muted-foreground/30 pl-3 italic text-foreground/80 bg-muted/30 rounded-sm" {...props} />
+                ),
+                hr: () => <hr className="my-4 border-t border-muted" />,
+                ul: ({ node, ...props }: any) => <ul className="list-disc pl-5 space-y-1" {...props} />,
+                ol: ({ node, ...props }: any) => <ol className="list-decimal pl-5 space-y-1" {...props} />,
+                li: ({ node, ...props }: any) => <li className="leading-relaxed" {...props} />,
+                img: ({ node, ...props }: any) => <img className="rounded-md shadow-sm max-w-full" {...props} />,
+                h1: ({ node, ...props }: any) => <h1 className="mt-2 mb-2 text-xl font-bold" {...props} />,
+                h2: ({ node, ...props }: any) => <h2 className="mt-2 mb-1 font-semibold text-base" {...props} />,
+                h3: ({ node, ...props }: any) => <h3 className="mt-2 mb-1 font-semibold" {...props} />,
+                h4: ({ node, ...props }: any) => <h4 className="mt-2 mb-1 font-semibold text-sm" {...props} />,
+                table: ({ node, ...props }: any) => <div className="overflow-x-auto"><table className="border-collapse text-xs" {...props} /></div>,
+                th: ({ node, ...props }: any) => <th className="border px-2 py-1 bg-muted/50" {...props} />,
+                td: ({ node, ...props }: any) => <td className="border px-2 py-1" {...props} />,
+              }}
             >
               {message.content}
             </ReactMarkdown>
