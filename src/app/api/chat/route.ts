@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { generateAnswer, type ChatSourceMeta, embedText } from "@/lib/gemini"
+import { generateAnswer, type ChatSourceMeta } from "@/lib/gemini"
 import { searchWeb } from "@/lib/websearch"
-import { getAnonClient, getAdminClient } from "@/lib/supabase" // <-- ajout
 
 // Heuristique simple pour détecter une réponse incertaine
 function isUncertain(text: string | undefined): boolean {
@@ -25,27 +24,6 @@ function isUncertain(text: string | undefined): boolean {
   return short || doubtful
 }
 
-// helper: score supabase (similarity/score/distance)
-type MatchDocumentRow = {
-  content: string
-  metadata: import("@/lib/gemini").ChatSourceMeta | null
-  similarity?: number
-  score?: number
-  distance?: number
-}
-
-function scoreOf(
-  d: Readonly<Pick<MatchDocumentRow, "similarity" | "score" | "distance">> | null | undefined
-): number {
-  if (typeof d?.similarity === "number") return d.similarity
-  if (typeof d?.score === "number") return d.score
-  if (typeof d?.distance === "number") {
-    const v = 1 - d.distance
-    return Number.isFinite(v) ? v : 0
-  }
-  return 0
-}
-
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -63,44 +41,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Paramètre 'question' manquant." }, { status: 400 })
     }
 
-    // 0) RAG: recherche Supabase d’abord
-    const thr = Number(process.env.RETRIEVAL_THRESHOLD || "0.5")
-    let sbContext: Array<{ content: string; metadata?: ChatSourceMeta }> = []
-    let bestScore = 0
-    try {
-      const emb = await embedText(question)
-      const anon = getAnonClient()
-      // match_documents: fonction RPC côté Supabase (vector similarity)
-      const { data, error } = await anon.rpc<MatchDocumentRow[]>("match_documents", {
-        query_embedding: emb,
-        match_count: 5,
-        filter: null,
-      }) as { data: MatchDocumentRow[] | null; error: unknown }
-
-      if (!error && Array.isArray(data) && data.length) {
-        bestScore = scoreOf(data[0])
-        sbContext = data.map((d): { content: string; metadata?: ChatSourceMeta } => ({
-          content: String(d?.content ?? ""),
-          metadata: d?.metadata ?? undefined,
-        }))
-      }
-    } catch {
-      // en cas d’échec Supabase, on continue sans bloquer
-    }
-
-    // 1) Première tentative: contexte Supabase + contexte fourni
-    let mergedContext = [...sbContext, ...(Array.isArray(context) ? context : [])]
+    // 1) Première tentative sans web (on respecte le contexte fourni)
+    let mergedContext = Array.isArray(context) ? context : []
     const primary = await generateAnswer(
       question,
       mergedContext,
       Array.isArray(history) ? history : []
     )
 
-    // 2) Fallback web si (autorisé) ET (réponse incertaine OU faible score RAG)
+    // 2) Si l’utilisateur force le web OU si la réponse semble incertaine → recherche web, second essai
     let usedWeb = false
-    let finalText = primary
-    const allowWebFallback = bestScore < thr
-    if ((useWeb && allowWebFallback) || isUncertain(primary)) {
+    if (useWeb || isUncertain(primary)) {
       try {
         const web = await searchWeb(question, 5)
         if (web && web.length) {
@@ -114,65 +65,16 @@ export async function POST(req: NextRequest) {
             mergedContext,
             Array.isArray(history) ? history : []
           )
+          // Si la seconde réponse est valable, on la renvoie; sinon, on garde la première
           if (secondary && secondary.trim().length > 0 && !isUncertain(secondary)) {
             usedWeb = true
-            finalText = secondary
-            // ingestion asynchrone: enregistre la réponse dans Supabase
-            void (async () => {
-              try {
-                const admin = getAdminClient()
-                const embAns = await embedText(finalText ?? "")
-                const meta = {
-                  source: "qa",
-                  section: "answer",
-                  question,
-                  usedWeb: true,
-                  // stocke les URLs utilisées si présentes dans web
-                  urls: web.map(w => w.url).filter(Boolean),
-                  date_scrap: new Date().toISOString(),
-                }
-                await admin.rpc("insert_document", {
-                  p_content: finalText ?? "",
-                  p_metadata: meta,
-                  p_embedding: embAns,
-                })
-              } catch {
-                // ignore
-              }
-            })()
-            return NextResponse.json({ ok: true, text: finalText, usedWeb })
+            return NextResponse.json({ ok: true, text: secondary, usedWeb })
           }
         }
-      } catch {
-        // ignore fallback errors
-      }
+      } catch { /* ignore fallback errors */ }
     }
 
-    // 3) Réponse RAG (ou primaire) — on enregistre aussi
-    void (async () => {
-      try {
-        const admin = getAdminClient()
-        const embAns = await embedText(finalText ?? "")
-        const meta = {
-          source: "qa",
-          section: "answer",
-          question,
-          usedWeb: false,
-          // si des sources RAG existent, on les matérialise dans la metadata
-          ragSources: sbContext.map(c => c.metadata?.url).filter(Boolean),
-          date_scrap: new Date().toISOString(),
-        }
-        await admin.rpc("insert_document", {
-          p_content: finalText ?? "",
-          p_metadata: meta,
-          p_embedding: embAns,
-        })
-      } catch {
-        // ignore
-      }
-    })()
-
-    return NextResponse.json({ ok: true, text: finalText, usedWeb })
+    return NextResponse.json({ ok: true, text: primary, usedWeb })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Erreur serveur."
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
